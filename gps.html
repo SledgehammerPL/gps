@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8">
-  <title>Historia GPS ze ścieżką</title>
+  <title>Historia GPS ze ścieżką i korektą dryfu</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <style>
@@ -34,6 +34,10 @@
     var idx = 0;
     var intervalId = null;
     var stepMs = 150;
+
+    // Korekta dryfu
+    var referencePoint = null;   // pierwsza współrzędna player_id=2
+    var driftCorrection = {lat:0, lon:0}; // aktualna różnica
 
     function colorForPlayer(id) {
       var colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'black'];
@@ -103,6 +107,27 @@
       var lat = item.latitude;
       var lon = item.longitude;
       var id  = item.player_id;
+
+      // Korekta dryfu
+      if (id == 2) {
+        if (!referencePoint) {
+          referencePoint = {lat: lat, lon: lon};
+          driftCorrection = {lat:0, lon:0};
+        } else {
+          driftCorrection = {
+            lat: lat - referencePoint.lat,
+            lon: lon - referencePoint.lon
+          };
+        }
+        // dla player 2 zawsze wracamy do punktu referencyjnego
+        lat = referencePoint.lat;
+        lon = referencePoint.lon;
+      } else if (id == 1 && referencePoint) {
+        // dla player 1 odejmujemy korektę
+        lat = lat - driftCorrection.lat;
+        lon = lon - driftCorrection.lon;
+      }
+
       var point = [lat, lon];
 
       // Marker
@@ -140,6 +165,8 @@
       if (records.length === 0) return;
       if (intervalId) { clearInterval(intervalId); intervalId = null; }
       idx = 0;
+      referencePoint = null;
+      driftCorrection = {lat:0, lon:0};
       intervalId = setInterval(step, stepMs);
       document.getElementById('status').textContent = 'Odtwarzanie…';
       updateProgress();
