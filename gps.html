@@ -2,13 +2,14 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8">
-  <title>Historia GPS — ref z parametru GET</title>
+  <title>Historia GPS — ref z parametru GET + prędkości</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <style>
     body { margin:0; font-family:sans-serif; }
-    #map { height:80vh; width:100vw; }
+    #map { height:70vh; width:100vw; }
     #panel { padding:8px 12px; background:#f5f5f5; border-top:1px solid #ddd; display:flex; gap:10px; flex-wrap:wrap; }
+    #speedPanel { padding:8px 12px; background:#eee; border-top:1px solid #ccc; }
     button { margin-right:10px; }
   </style>
 </head>
@@ -20,6 +21,9 @@
     <button id="btnResume">Wznów</button>
     <span id="status">Ładowanie…</span>
     <span id="progress"></span>
+  </div>
+  <div id="speedPanel">
+    <strong>Prędkości:</strong> <span id="speedInfo"></span>
   </div>
 
 <script>
@@ -39,10 +43,26 @@
   var referenceSats=0;
   var drift={lat:0,lon:0};
 
+  // Prędkości
+  var lastPoints={}; // { player_id: {lat, lon, time} }
+  var speeds={};     // { player_id: value }
+
   function colorForPlayer(id){
     var colors=['red','blue','green','orange','purple','brown','black'];
     var i=parseInt(id,10); if(isNaN(i)) i=0;
     return colors[i%colors.length];
+  }
+
+  function haversine(lat1, lon1, lat2, lon2) {
+    const R = 6371000; // promień Ziemi w metrach
+    const toRad = x => x * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat/2)**2 +
+              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+              Math.sin(dLon/2)**2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
   }
 
   fetch('history.php').then(r=>r.json()).then(data=>{
@@ -50,7 +70,8 @@
       latitude:Number(d.latitude),
       longitude:Number(d.longitude),
       player_id:d.player_id,
-      sats:d.sats?Number(d.sats):0
+      sats:d.sats?Number(d.sats):0,
+      timestamp:d.timestamp
     }));
     var pts=records.map(d=>[d.latitude,d.longitude]);
     map.fitBounds(L.latLngBounds(pts).pad(0.2));
@@ -70,10 +91,10 @@
     }
     var item=records[idx]; if(!item){idx++;updateProgress();return;}
     var lat=item.latitude, lon=item.longitude, id=item.player_id, sats=item.sats||0;
+    var t=new Date(item.timestamp).getTime();
 
     if(correctionEnabled){
       if(id==refId){
-        // aktualizuj referencję tylko jeśli więcej satelitów
         if(!referencePoint || sats>referenceSats){
           referencePoint={lat:lat,lon:lon};
           referenceSats=sats;
@@ -86,7 +107,22 @@
         lat=lat-drift.lat; lon=lon-drift.lon;
       }
     }
-    // jeśli correction=no → nic nie zmieniamy
+
+    // liczenie prędkości
+    if(lastPoints[id]){
+      var dt=(t-lastPoints[id].time)/1000;
+      if(dt>0){
+        var dist=haversine(lastPoints[id].lat,lastPoints[id].lon,lat,lon);
+        speeds[id]=dist/dt; // m/s
+      }
+    }
+    lastPoints[id]={lat:lat,lon:lon,time:t};
+
+    // aktualizacja panelu prędkości
+    var info=Object.keys(speeds).map(pid=>
+      'Player '+pid+': '+(speeds[pid]*3.6).toFixed(2)+' km/h'
+    ).join(' | ');
+    document.getElementById('speedInfo').textContent=info;
 
     var point=[lat,lon];
     if(!markers[id]){
@@ -106,6 +142,7 @@
     if(records.length===0) return;
     clearInterval(intervalId); idx=0;
     referencePoint=null; referenceSats=0; drift={lat:0,lon:0};
+    lastPoints={}; speeds={};
     Object.keys(polylines).forEach(pid=>map.removeLayer(polylines[pid])); polylines={}; paths={};
     Object.keys(markers).forEach(pid=>map.removeLayer(markers[pid])); markers={};
     intervalId=setInterval(step,stepMs);
