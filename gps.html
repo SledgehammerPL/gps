@@ -2,46 +2,31 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8">
-  <title>Historia GPS — Statystyki + Heatmapa</title>
+  <title>Historia GPS — Indywidualne Heatmapy</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <style>
     body { margin:0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-    
     #main-container { display: flex; flex: 1; height: 100%; overflow: hidden; }
     #map { flex: 1; height: 100%; }
     
-    /* Panel boczny */
-    #sidebar { 
-        width: 320px; 
-        background: #2c3e50; 
-        color: white; 
-        display: flex; 
-        flex-direction: column; 
-        border-left: 3px solid #1a252f; 
-    }
-
-    /* Kontrolki wewnątrz sidebar */
+    #sidebar { width: 320px; background: #2c3e50; color: white; display: flex; flex-direction: column; border-left: 3px solid #1a252f; }
     #controls { padding: 15px; background: #1a252f; border-bottom: 1px solid #34495e; }
-    .btn-group { display: flex; gap: 5px; margin-bottom: 10px; }
-    button { 
-        flex: 1; padding: 8px 5px; cursor: pointer; border: none; 
-        border-radius: 3px; font-weight: bold; background: #3498db; color: white;
-    }
+    
+    .btn-group { display: flex; gap: 5px; margin-bottom: 12px; }
+    button { flex: 1; padding: 8px 5px; cursor: pointer; border: none; border-radius: 3px; font-weight: bold; background: #3498db; color: white; }
     button:hover { background: #2980b9; }
     #btnStart { background: #2ecc71; }
-    #btnStart:hover { background: #27ae60; }
     
-    #status-info { font-size: 0.85em; color: #bdc3c7; }
+    .view-selector { margin-bottom: 10px; }
+    select { width: 100%; padding: 8px; border-radius: 4px; background: #34495e; color: white; border: 1px solid #555; cursor: pointer; }
 
-    /* Lista zawodników */
+    #status-info { font-size: 0.85em; color: #bdc3c7; margin-top: 5px; }
+
     #playerList { flex: 1; overflow-y: auto; padding: 15px; }
-    .player-row { 
-        padding: 10px; margin-bottom: 8px; border-radius: 5px; 
-        background: #34495e; font-size: 0.85em; transition: 0.3s;
-    }
+    .player-row { padding: 10px; margin-bottom: 8px; border-radius: 5px; background: #34495e; font-size: 0.85em; }
     .player-header { display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 5px; }
     .player-stats { color: #ecf0f1; line-height: 1.4; }
-    .active-player { border-left: 5px solid #2ecc71; background: #3d566e; }
+    .active-player { border-left: 5px solid #2ecc71; }
   </style>
 </head>
 <body>
@@ -56,14 +41,21 @@
           <button id="btnPause">Pauza</button>
           <button id="btnResume">Wznów</button>
         </div>
+
+        <div class="view-selector">
+          <label style="font-size: 0.8em; color: #bdc3c7;">Widok Heatmapy:</label>
+          <select id="heatSwitch">
+            <option value="all">Wszyscy zawodnicy</option>
+            </select>
+        </div>
+
         <div id="status-info">
-          Status: <span id="status">Ładowanie danych...</span><br>
-          <span id="progress">Czekam na start</span>
+          Status: <span id="status">Ładowanie...</span><br>
+          <span id="progress">Czekam na dane</span>
         </div>
       </div>
 
-      <div id="playerList">
-        </div>
+      <div id="playerList"></div>
     </div>
   </div>
 
@@ -74,68 +66,71 @@
   var map = L.map('map').setView([50.25854,18.96594],18);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:22}).addTo(map);
 
+  // Warstwa heatmapy
   var heatLayer = L.heatLayer([], {radius: 15, blur: 10, max: 1.0}).addTo(map);
 
   var markers={}, polylines={}, paths={}, records=[];
+  var heatData = { all: [] }; // Obiekt przechowujący punkty: { 'all': [], '1': [], '2': [] ... }
   var idx=0, intervalId=null, stepMs=100;
 
   const refId = parseInt(new URL(window.location.href).searchParams.get("ref")) || 0;
-  const correctionEnabled = (new URL(window.location.href).searchParams.get("correction") !== "no");
-
-  var referencePoint=null, referenceSats=0, drift={lat:0,lon:0};
   var lastPoints={}, speeds={}, distances={}, maxSpeeds={};
 
-  // Inicjalizacja listy zawodników 1-11 w panelu
+  // Inicjalizacja Sidebaru i Selecta
   const playerListEl = document.getElementById('playerList');
+  const heatSwitch = document.getElementById('heatSwitch');
+
   for(let i=1; i<=11; i++) {
+      // Dodaj do listy statystyk
       const div = document.createElement('div');
       div.className = 'player-row';
       div.id = `player-row-${i}`;
-      div.innerHTML = `
-        <div class="player-header">
-            <span>ZAWODNIK ${i}</span>
-            <span style="color:${colorForPlayer(i)}">●</span>
-        </div>
-        <div class="player-stats" id="stats-${i}">Brak danych</div>
-      `;
+      div.innerHTML = `<div class="player-header"><span>ZAWODNIK ${i}</span><span style="color:${colorForPlayer(i)}">●</span></div><div class="player-stats" id="stats-${i}">Brak danych</div>`;
       playerListEl.appendChild(div);
+
+      // Dodaj do przełącznika heatmapy
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = `Tylko Zawodnik ${i}`;
+      heatSwitch.appendChild(opt);
+
+      // Przygotuj tablice na dane heatmapy
+      heatData[i] = [];
   }
 
   function colorForPlayer(id){
-    var colors=['#e74c3c','#3498db','#2ecc71','#f1c40f','#9b59b6','#e67e22','#1abc9c','#d35400','#95a5a6','#7f8c8d','#c0392b'];
+    var colors=['#e74c3c','#3498db','#2ecc71','#f1c40f','#9b59b6','#e67e22','#1abc9c','#f39c12','#95a5a6','#7f8c8d','#c0392b'];
     return colors[(id-1) % colors.length];
   }
 
   function haversine(lat1, lon1, lat2, lon2) {
     const R = 6371000;
     const toRad = x => x * Math.PI / 180;
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lon2 - lon1);
+    const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
     const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   }
 
-  // Pobieranie danych
+  // Obsługa przełączania heatmapy w locie
+  heatSwitch.addEventListener('change', function() {
+      updateHeatmapDisplay();
+  });
+
+  function updateHeatmapDisplay() {
+      const val = heatSwitch.value;
+      heatLayer.setLatLngs(heatData[val]);
+  }
+
   fetch('history.php').then(r=>r.json()).then(data=>{
     records = data.map(d=>({
-      latitude: Number(d.latitude),
-      longitude: Number(d.longitude),
-      player_id: parseInt(d.player_id),
-      sats: d.sats ? Number(d.sats) : 0,
+      latitude: Number(d.latitude), longitude: Number(d.longitude),
+      player_id: parseInt(d.player_id), sats: d.sats ? Number(d.sats) : 0,
       timestamp: d.timestamp
     }));
-    
     if(records.length > 0) {
-        var pts = records.map(d=>[d.latitude,d.longitude]);
-        map.fitBounds(L.latLngBounds(pts).pad(0.1));
-        document.getElementById('status').textContent = 'Gotowe do startu';
-        document.getElementById('progress').textContent = records.length + ' punktów wczytanych';
-    } else {
-        document.getElementById('status').textContent = 'Brak danych w history.php';
+        map.fitBounds(L.latLngBounds(records.map(d=>[d.latitude,d.longitude])).pad(0.1));
+        document.getElementById('status').textContent = 'Gotowe';
     }
-  }).catch(err => {
-      document.getElementById('status').textContent = 'Błąd pobierania danych';
-      console.error(err);
   });
 
   function step(){
@@ -146,31 +141,16 @@
     }
 
     var item = records[idx];
-    var lat=item.latitude, lon=item.longitude, id=item.player_id, sats=item.sats||0;
+    var lat=item.latitude, lon=item.longitude, id=item.player_id;
     var t = new Date(item.timestamp).getTime();
 
-    // Korekta GPS
-    if(correctionEnabled){
-      if(id==refId){
-        if(!referencePoint || sats>referenceSats){
-          referencePoint={lat:lat,lon:lon}; referenceSats=sats; drift={lat:0,lon:0};
-        } else {
-          drift={lat:lat-referencePoint.lat, lon:lon-referencePoint.lon};
-        }
-        lat=referencePoint.lat; lon=referencePoint.lon;
-      } else if(referencePoint){
-        lat=lat-drift.lat; lon=lon-drift.lon;
-      }
-    }
-
-    // Obliczenia statystyk
+    // Logika statystyk
     if(lastPoints[id]){
       var dt = (t - lastPoints[id].time) / 1000;
       if(dt > 0){
         var dist = haversine(lastPoints[id].lat, lastPoints[id].lon, lat, lon);
         var speedKmh = (dist / dt) * 3.6;
-        
-        if(speedKmh < 150) { // Filtr błędów GPS (piki prędkości)
+        if(speedKmh < 120) {
             speeds[id] = speedKmh;
             distances[id] = (distances[id]||0) + dist;
             if(!maxSpeeds[id] || speedKmh > maxSpeeds[id]) maxSpeeds[id] = speedKmh;
@@ -179,68 +159,58 @@
     }
     lastPoints[id] = {lat:lat, lon:lon, time:t};
 
-    // Aktualizacja Heatmapy
-    heatLayer.addLatLng([lat, lon, 0.4]);
+    // ZAPIS DANYCH HEATMAPY
+    const point = [lat, lon, 0.5];
+    heatData.all.push(point);
+    if(heatData[id]) heatData[id].push(point);
 
-    // Aktualizacja wiersza zawodnika w sidebarze
+    // Odśwież widok heatmapy tylko jeśli ten zawodnik jest wybrany lub wybrani są wszyscy
+    if(heatSwitch.value === 'all' || heatSwitch.value == id) {
+        updateHeatmapDisplay();
+    }
+
+    // Aktualizacja UI
     const statsDiv = document.getElementById(`stats-${id}`);
-    const rowDiv = document.getElementById(`player-row-${id}`);
     if(statsDiv) {
-        rowDiv.classList.add('active-player');
-        statsDiv.innerHTML = `
-            V: <b>${speeds[id] ? speeds[id].toFixed(1) : 0} km/h</b><br>
-            Max: <span style="color:#2ecc71">${maxSpeeds[id] ? maxSpeeds[id].toFixed(1) : 0} km/h</span><br>
-            Dystans: ${(distances[id]/1000).toFixed(3)} km
-        `;
+        document.getElementById(`player-row-${id}`).classList.add('active-player');
+        statsDiv.innerHTML = `V: <b>${speeds[id] ? speeds[id].toFixed(1) : 0} km/h</b> | Max: <b style="color:#2ecc71">${maxSpeeds[id] ? maxSpeeds[id].toFixed(1) : 0}</b><br>Dystans: ${(distances[id]/1000).toFixed(3)} km`;
     }
 
     // Rysowanie na mapie
-    var point = [lat, lon];
+    var latLng = [lat, lon];
     if(!markers[id]){
-      markers[id] = L.circleMarker(point, {radius: 6, color: colorForPlayer(id), fillOpacity: 1}).addTo(map);
-    } else markers[id].setLatLng(point);
+      markers[id] = L.circleMarker(latLng, {radius: 5, color: colorForPlayer(id), fillOpacity: 1}).addTo(map);
+    } else markers[id].setLatLng(latLng);
 
     if(!paths[id]) paths[id] = [];
-    paths[id].push(point);
+    paths[id].push(latLng);
     if(!polylines[id]){
-      polylines[id] = L.polyline(paths[id], {color: colorForPlayer(id), weight: 2, opacity: 0.5}).addTo(map);
+      polylines[id] = L.polyline(paths[id], {color: colorForPlayer(id), weight: 2, opacity: 0.4}).addTo(map);
     } else polylines[id].setLatLngs(paths[id]);
 
     idx++;
     document.getElementById('progress').textContent = 'Punkt: ' + idx + ' / ' + records.length;
   }
 
-  // Obsługa przycisków
   document.getElementById('btnStart').addEventListener('click', function(){
     if(records.length === 0) return;
+    clearInterval(intervalId); idx = 0;
     
-    // Resetowanie wszystkiego
-    clearInterval(intervalId); 
-    idx = 0;
+    // Reset heatmap
+    Object.keys(heatData).forEach(k => heatData[k] = []);
     heatLayer.setLatLngs([]);
-    referencePoint = null; lastPoints = {}; speeds = {}; distances = {}; maxSpeeds = {};
     
+    // Reset reszty
+    lastPoints = {}; speeds = {}; distances = {}; maxSpeeds = {};
     Object.keys(polylines).forEach(pid => map.removeLayer(polylines[pid])); polylines = {}; paths = {};
     Object.keys(markers).forEach(pid => map.removeLayer(markers[pid])); markers = {};
-    
-    document.querySelectorAll('.player-stats').forEach(el => el.innerHTML = "Brak danych");
     document.querySelectorAll('.player-row').forEach(el => el.classList.remove('active-player'));
 
-    document.getElementById('status').textContent = 'Odtwarzanie...';
     intervalId = setInterval(step, stepMs);
   });
 
-  document.getElementById('btnPause').addEventListener('click', () => {
-    clearInterval(intervalId); intervalId = null;
-    document.getElementById('status').textContent = 'Wstrzymano';
-  });
-
-  document.getElementById('btnResume').addEventListener('click', () => {
-    if(!intervalId && idx < records.length){
-      intervalId = setInterval(step, stepMs);
-      document.getElementById('status').textContent = 'Odtwarzanie...';
-    }
-  });
+  document.getElementById('btnPause').addEventListener('click', () => { clearInterval(intervalId); intervalId = null; });
+  document.getElementById('btnResume').addEventListener('click', () => { if(!intervalId && idx < records.length) intervalId = setInterval(step, stepMs); });
 </script>
 </body>
 </html>
