@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8">
-  <title>Historia GPS ze ścieżką i korektą dryfu</title>
+  <title>Historia GPS ze ścieżką i korektą dryfu + satelity</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <style>
@@ -27,17 +27,18 @@
     var map = L.map('map').setView([50.25854, 18.96594], 18);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 22 }).addTo(map);
 
-    var markers = {};            // { player_id: Leaflet marker }
-    var polylines = {};          // { player_id: Leaflet polyline }
-    var paths = {};              // { player_id: array of LatLng }
-    var records = [];            // rekordy z JSON
+    var markers = {};
+    var polylines = {};
+    var paths = {};
+    var records = [];
     var idx = 0;
     var intervalId = null;
     var stepMs = 150;
 
     // Korekta dryfu
-    var referencePoint = null;   // pierwsza współrzędna player_id=2
-    var driftCorrection = {lat:0, lon:0}; // aktualna różnica
+    var referencePoint = null;   // współrzędna wzorcowa (player_id=2)
+    var referenceSats = 0;       // liczba satelitów dla wzorca
+    var driftCorrection = {lat:0, lon:0};
 
     function colorForPlayer(id) {
       var colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'black'];
@@ -55,9 +56,6 @@
           return;
         }
 
-        if (data.length > 0) {
-          alert("Pierwszy obiekt:\n" + JSON.stringify(data[0], null, 2));
-        }
 
         document.getElementById('status').textContent = 'Pobrano ' + data.length + ' rekordów';
 
@@ -68,7 +66,8 @@
           longitude: Number(d.longitude),
           player_id: d.player_id,
           timestamp: d.timestamp,
-          id: d.id
+          id: d.id,
+          sats: d.sats ? Number(d.sats) : 0   // liczba satelitów
         }));
 
         if (records.length === 0) {
@@ -107,30 +106,36 @@
       var lat = item.latitude;
       var lon = item.longitude;
       var id  = item.player_id;
+      var sats = item.sats || 0;
 
-      // Korekta dryfu
-      if (id == 2) {
+      // Korekta dryfu z uwzględnieniem satelitów
+      if (id == 0) {
         if (!referencePoint) {
           referencePoint = {lat: lat, lon: lon};
+          referenceSats = sats;
           driftCorrection = {lat:0, lon:0};
         } else {
-          driftCorrection = {
-            lat: lat - referencePoint.lat,
-            lon: lon - referencePoint.lon
-          };
+          // jeśli nowa współrzędna ma więcej satelitów niż dotychczasowy wzorzec -> aktualizuj
+          if (sats > referenceSats) {
+            referencePoint = {lat: lat, lon: lon};
+            referenceSats = sats;
+            driftCorrection = {lat:0, lon:0};
+          } else {
+            driftCorrection = {
+              lat: lat - referencePoint.lat,
+              lon: lon - referencePoint.lon
+            };
+          }
         }
-        // dla player 2 zawsze wracamy do punktu referencyjnego
         lat = referencePoint.lat;
         lon = referencePoint.lon;
-      } else if (id == 1 && referencePoint) {
-        // dla player 1 odejmujemy korektę
+      } else if (id != 0 && referencePoint) {
         lat = lat - driftCorrection.lat;
         lon = lon - driftCorrection.lon;
       }
 
       var point = [lat, lon];
 
-      // Marker
       if (!markers[id]) {
         markers[id] = L.circleMarker(point, {
           radius: 6,
@@ -143,7 +148,6 @@
         markers[id].setLatLng(point);
       }
 
-      // Polyline ścieżki
       if (!paths[id]) paths[id] = [];
       paths[id].push(point);
 
@@ -166,6 +170,7 @@
       if (intervalId) { clearInterval(intervalId); intervalId = null; }
       idx = 0;
       referencePoint = null;
+      referenceSats = 0;
       driftCorrection = {lat:0, lon:0};
       intervalId = setInterval(step, stepMs);
       document.getElementById('status').textContent = 'Odtwarzanie…';
