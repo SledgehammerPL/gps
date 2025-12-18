@@ -2,103 +2,158 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8">
-  <title>Historia GPS — ref z parametru GET + prędkości</title>
+  <title>Historia GPS — Statystyki + Heatmapa</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <style>
-    body { margin:0; font-family:sans-serif; }
-    #map { height:70vh; width:100vw; }
-    #panel { padding:8px 12px; background:#f5f5f5; border-top:1px solid #ddd; display:flex; gap:10px; flex-wrap:wrap; }
-    #speedPanel { padding:8px 12px; background:#eee; border-top:1px solid #ccc; }
-    button { margin-right:10px; }
+    body { margin:0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    
+    #main-container { display: flex; flex: 1; height: 100%; overflow: hidden; }
+    #map { flex: 1; height: 100%; }
+    
+    /* Panel boczny */
+    #sidebar { 
+        width: 320px; 
+        background: #2c3e50; 
+        color: white; 
+        display: flex; 
+        flex-direction: column; 
+        border-left: 3px solid #1a252f; 
+    }
+
+    /* Kontrolki wewnątrz sidebar */
+    #controls { padding: 15px; background: #1a252f; border-bottom: 1px solid #34495e; }
+    .btn-group { display: flex; gap: 5px; margin-bottom: 10px; }
+    button { 
+        flex: 1; padding: 8px 5px; cursor: pointer; border: none; 
+        border-radius: 3px; font-weight: bold; background: #3498db; color: white;
+    }
+    button:hover { background: #2980b9; }
+    #btnStart { background: #2ecc71; }
+    #btnStart:hover { background: #27ae60; }
+    
+    #status-info { font-size: 0.85em; color: #bdc3c7; }
+
+    /* Lista zawodników */
+    #playerList { flex: 1; overflow-y: auto; padding: 15px; }
+    .player-row { 
+        padding: 10px; margin-bottom: 8px; border-radius: 5px; 
+        background: #34495e; font-size: 0.85em; transition: 0.3s;
+    }
+    .player-header { display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 5px; }
+    .player-stats { color: #ecf0f1; line-height: 1.4; }
+    .active-player { border-left: 5px solid #2ecc71; background: #3d566e; }
   </style>
 </head>
 <body>
-  <div id="map"></div>
-  <div id="panel">
-    <button id="btnStart">Start</button>
-    <button id="btnPause">Pauza</button>
-    <button id="btnResume">Wznów</button>
-    <span id="status">Ładowanie…</span>
-    <span id="progress"></span>
+
+  <div id="main-container">
+    <div id="map"></div>
+    
+    <div id="sidebar">
+      <div id="controls">
+        <div class="btn-group">
+          <button id="btnStart">START</button>
+          <button id="btnPause">Pauza</button>
+          <button id="btnResume">Wznów</button>
+        </div>
+        <div id="status-info">
+          Status: <span id="status">Ładowanie danych...</span><br>
+          <span id="progress">Czekam na start</span>
+        </div>
+      </div>
+
+      <div id="playerList">
+        </div>
+    </div>
   </div>
-  <div id="speedPanel">
-    <strong>Prędkości:</strong> <span id="speedInfo"></span>
-  </div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
 
 <script>
   var map = L.map('map').setView([50.25854,18.96594],18);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:22}).addTo(map);
 
+  var heatLayer = L.heatLayer([], {radius: 15, blur: 10, max: 1.0}).addTo(map);
+
   var markers={}, polylines={}, paths={}, records=[];
-  var idx=0, intervalId=null, stepMs=150;
+  var idx=0, intervalId=null, stepMs=100;
 
-  // Parametry GET
-  function getParam(name){return new URL(window.location.href).searchParams.get(name);}
-  const refId = parseInt(getParam("ref")) || 0;              // stacja referencyjna
-  const correctionEnabled = (getParam("correction") !== "no"); // korekta włączona domyślnie
+  const refId = parseInt(new URL(window.location.href).searchParams.get("ref")) || 0;
+  const correctionEnabled = (new URL(window.location.href).searchParams.get("correction") !== "no");
 
-  // Referencja
-  var referencePoint=null;
-  var referenceSats=0;
-  var drift={lat:0,lon:0};
+  var referencePoint=null, referenceSats=0, drift={lat:0,lon:0};
+  var lastPoints={}, speeds={}, distances={}, maxSpeeds={};
 
-  // Prędkości
-  var lastPoints={}; // { player_id: {lat, lon, time} }
-  var speeds={};     // { player_id: value }
+  // Inicjalizacja listy zawodników 1-11 w panelu
+  const playerListEl = document.getElementById('playerList');
+  for(let i=1; i<=11; i++) {
+      const div = document.createElement('div');
+      div.className = 'player-row';
+      div.id = `player-row-${i}`;
+      div.innerHTML = `
+        <div class="player-header">
+            <span>ZAWODNIK ${i}</span>
+            <span style="color:${colorForPlayer(i)}">●</span>
+        </div>
+        <div class="player-stats" id="stats-${i}">Brak danych</div>
+      `;
+      playerListEl.appendChild(div);
+  }
 
   function colorForPlayer(id){
-    var colors=['red','blue','green','orange','purple','brown','black'];
-    var i=parseInt(id,10); if(isNaN(i)) i=0;
-    return colors[i%colors.length];
+    var colors=['#e74c3c','#3498db','#2ecc71','#f1c40f','#9b59b6','#e67e22','#1abc9c','#d35400','#95a5a6','#7f8c8d','#c0392b'];
+    return colors[(id-1) % colors.length];
   }
 
   function haversine(lat1, lon1, lat2, lon2) {
-    const R = 6371000; // promień Ziemi w metrach
+    const R = 6371000;
     const toRad = x => x * Math.PI / 180;
     const dLat = toRad(lat2 - lat1);
     const dLon = toRad(lon2 - lon1);
-    const a = Math.sin(dLat/2)**2 +
-              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-              Math.sin(dLon/2)**2;
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
+    const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   }
 
+  // Pobieranie danych
   fetch('history.php').then(r=>r.json()).then(data=>{
-    records=data.map(d=>({
-      latitude:Number(d.latitude),
-      longitude:Number(d.longitude),
-      player_id:d.player_id,
-      sats:d.sats?Number(d.sats):0,
-      timestamp:d.timestamp
+    records = data.map(d=>({
+      latitude: Number(d.latitude),
+      longitude: Number(d.longitude),
+      player_id: parseInt(d.player_id),
+      sats: d.sats ? Number(d.sats) : 0,
+      timestamp: d.timestamp
     }));
-    var pts=records.map(d=>[d.latitude,d.longitude]);
-    map.fitBounds(L.latLngBounds(pts).pad(0.2));
-    document.getElementById('status').textContent='Gotowe ('+records.length+' rekordów)';
-    updateProgress();
+    
+    if(records.length > 0) {
+        var pts = records.map(d=>[d.latitude,d.longitude]);
+        map.fitBounds(L.latLngBounds(pts).pad(0.1));
+        document.getElementById('status').textContent = 'Gotowe do startu';
+        document.getElementById('progress').textContent = records.length + ' punktów wczytanych';
+    } else {
+        document.getElementById('status').textContent = 'Brak danych w history.php';
+    }
+  }).catch(err => {
+      document.getElementById('status').textContent = 'Błąd pobierania danych';
+      console.error(err);
   });
 
-  function updateProgress(){
-    document.getElementById('progress').textContent='Krok: '+idx+' / '+records.length;
-  }
-
   function step(){
-    if(idx>=records.length){
-      clearInterval(intervalId);intervalId=null;
-      document.getElementById('status').textContent='Zakończono';
-      updateProgress();return;
+    if(idx >= records.length){
+      clearInterval(intervalId); intervalId=null;
+      document.getElementById('status').textContent = 'Zakończono';
+      return;
     }
-    var item=records[idx]; if(!item){idx++;updateProgress();return;}
-    var lat=item.latitude, lon=item.longitude, id=item.player_id, sats=item.sats||0;
-    var t=new Date(item.timestamp).getTime();
 
+    var item = records[idx];
+    var lat=item.latitude, lon=item.longitude, id=item.player_id, sats=item.sats||0;
+    var t = new Date(item.timestamp).getTime();
+
+    // Korekta GPS
     if(correctionEnabled){
       if(id==refId){
         if(!referencePoint || sats>referenceSats){
-          referencePoint={lat:lat,lon:lon};
-          referenceSats=sats;
-          drift={lat:0,lon:0};
+          referencePoint={lat:lat,lon:lon}; referenceSats=sats; drift={lat:0,lon:0};
         } else {
           drift={lat:lat-referencePoint.lat, lon:lon-referencePoint.lon};
         }
@@ -108,50 +163,84 @@
       }
     }
 
-    // liczenie prędkości
+    // Obliczenia statystyk
     if(lastPoints[id]){
-      var dt=(t-lastPoints[id].time)/1000;
-      if(dt>0){
-        var dist=haversine(lastPoints[id].lat,lastPoints[id].lon,lat,lon);
-        speeds[id]=dist/dt; // m/s
+      var dt = (t - lastPoints[id].time) / 1000;
+      if(dt > 0){
+        var dist = haversine(lastPoints[id].lat, lastPoints[id].lon, lat, lon);
+        var speedKmh = (dist / dt) * 3.6;
+        
+        if(speedKmh < 150) { // Filtr błędów GPS (piki prędkości)
+            speeds[id] = speedKmh;
+            distances[id] = (distances[id]||0) + dist;
+            if(!maxSpeeds[id] || speedKmh > maxSpeeds[id]) maxSpeeds[id] = speedKmh;
+        }
       }
     }
-    lastPoints[id]={lat:lat,lon:lon,time:t};
+    lastPoints[id] = {lat:lat, lon:lon, time:t};
 
-    // aktualizacja panelu prędkości
-    var info=Object.keys(speeds).map(pid=>
-      'Player '+pid+': '+(speeds[pid]*3.6).toFixed(2)+' km/h'
-    ).join(' | ');
-    document.getElementById('speedInfo').textContent=info;
+    // Aktualizacja Heatmapy
+    heatLayer.addLatLng([lat, lon, 0.4]);
 
-    var point=[lat,lon];
+    // Aktualizacja wiersza zawodnika w sidebarze
+    const statsDiv = document.getElementById(`stats-${id}`);
+    const rowDiv = document.getElementById(`player-row-${id}`);
+    if(statsDiv) {
+        rowDiv.classList.add('active-player');
+        statsDiv.innerHTML = `
+            V: <b>${speeds[id] ? speeds[id].toFixed(1) : 0} km/h</b><br>
+            Max: <span style="color:#2ecc71">${maxSpeeds[id] ? maxSpeeds[id].toFixed(1) : 0} km/h</span><br>
+            Dystans: ${(distances[id]/1000).toFixed(3)} km
+        `;
+    }
+
+    // Rysowanie na mapie
+    var point = [lat, lon];
     if(!markers[id]){
-      markers[id]=L.circleMarker(point,{radius:id==refId?8:6,color:colorForPlayer(id),fillColor:colorForPlayer(id),fillOpacity:0.9,weight:2}).addTo(map).bindPopup('Player '+id);
+      markers[id] = L.circleMarker(point, {radius: 6, color: colorForPlayer(id), fillOpacity: 1}).addTo(map);
     } else markers[id].setLatLng(point);
 
-    if(!paths[id]) paths[id]=[];
+    if(!paths[id]) paths[id] = [];
     paths[id].push(point);
     if(!polylines[id]){
-      polylines[id]=L.polyline(paths[id],{color:colorForPlayer(id),weight:id==refId?3:2,opacity:0.8}).addTo(map);
+      polylines[id] = L.polyline(paths[id], {color: colorForPlayer(id), weight: 2, opacity: 0.5}).addTo(map);
     } else polylines[id].setLatLngs(paths[id]);
 
-    idx++; updateProgress();
+    idx++;
+    document.getElementById('progress').textContent = 'Punkt: ' + idx + ' / ' + records.length;
   }
 
-  document.getElementById('btnStart').addEventListener('click',function(){
-    if(records.length===0) return;
-    clearInterval(intervalId); idx=0;
-    referencePoint=null; referenceSats=0; drift={lat:0,lon:0};
-    lastPoints={}; speeds={};
-    Object.keys(polylines).forEach(pid=>map.removeLayer(polylines[pid])); polylines={}; paths={};
-    Object.keys(markers).forEach(pid=>map.removeLayer(markers[pid])); markers={};
-    intervalId=setInterval(step,stepMs);
-    document.getElementById('status').textContent='Odtwarzanie…';
-    updateProgress();
+  // Obsługa przycisków
+  document.getElementById('btnStart').addEventListener('click', function(){
+    if(records.length === 0) return;
+    
+    // Resetowanie wszystkiego
+    clearInterval(intervalId); 
+    idx = 0;
+    heatLayer.setLatLngs([]);
+    referencePoint = null; lastPoints = {}; speeds = {}; distances = {}; maxSpeeds = {};
+    
+    Object.keys(polylines).forEach(pid => map.removeLayer(polylines[pid])); polylines = {}; paths = {};
+    Object.keys(markers).forEach(pid => map.removeLayer(markers[pid])); markers = {};
+    
+    document.querySelectorAll('.player-stats').forEach(el => el.innerHTML = "Brak danych");
+    document.querySelectorAll('.player-row').forEach(el => el.classList.remove('active-player'));
+
+    document.getElementById('status').textContent = 'Odtwarzanie...';
+    intervalId = setInterval(step, stepMs);
   });
-  document.getElementById('btnPause').addEventListener('click',()=>{clearInterval(intervalId);intervalId=null;document.getElementById('status').textContent='Wstrzymano';});
-  document.getElementById('btnResume').addEventListener('click',()=>{if(!intervalId&&records.length>0&&idx<records.length){intervalId=setInterval(step,stepMs);document.getElementById('status').textContent='Odtwarzanie…';}});
+
+  document.getElementById('btnPause').addEventListener('click', () => {
+    clearInterval(intervalId); intervalId = null;
+    document.getElementById('status').textContent = 'Wstrzymano';
+  });
+
+  document.getElementById('btnResume').addEventListener('click', () => {
+    if(!intervalId && idx < records.length){
+      intervalId = setInterval(step, stepMs);
+      document.getElementById('status').textContent = 'Odtwarzanie...';
+    }
+  });
 </script>
 </body>
 </html>
-
