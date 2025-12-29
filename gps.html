@@ -2,191 +2,191 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <title>GPS Analysis Pro - Manual View</title>
+    <title>GPS Analysis - Live Heatmap Pro</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body { margin: 0; background: #111; color: white; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; height: 100vh; }
-        #main-container { display: flex; flex: 1; overflow: hidden; }
+        #main { display: flex; flex: 1; overflow: hidden; }
         #map { flex: 1; background: #000; }
+        #sidebar { width: 350px; background: #1a1a1a; border-left: 1px solid #333; padding: 15px; overflow-y: auto; }
         
-        #sidebar { width: 350px; background: #1a1a1a; border-left: 1px solid #333; padding: 15px; overflow-y: auto; box-shadow: -5px 0 15px rgba(0,0,0,0.5); }
-        .player-row { 
+        .card { 
             background: #222; border-radius: 10px; padding: 15px; margin-bottom: 12px; 
-            border-left: 6px solid #ccc; transition: 0.2s;
+            border: 2px solid transparent; cursor: pointer; transition: 0.3s;
         }
-        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; font-size: 13px; }
-        .v-curr { color: #00d2ff; font-weight: bold; font-size: 20px; }
-        .v-max { color: #ff4757; font-weight: bold; }
-        .dist { color: #2ed573; font-weight: bold; }
-
-        .controls { height: 110px; background: #222; padding: 10px 25px; border-top: 1px solid #333; box-sizing: border-box; }
-        #timeline { width: 100%; accent-color: #00d2ff; cursor: pointer; margin: 10px 0; }
+        .card.active { border-color: #fff; background: #333; box-shadow: 0 0 15px rgba(255,255,255,0.1); }
+        .v-curr { color: #00d2ff; font-weight: bold; font-size: 22px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+        .label { font-size: 10px; color: #888; text-transform: uppercase; }
+        .val { font-weight: bold; font-size: 14px; }
+        
+        .controls { height: 120px; background: #222; padding: 15px 25px; border-top: 1px solid #333; }
+        #timeline { width: 100%; accent-color: #00d2ff; cursor: pointer; }
         .time-display { font-family: monospace; font-size: 24px; color: #00d2ff; }
         
-        button { background: #00d2ff; color: #000; border: 0; padding: 8px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; }
-        button:hover { background: #00b8e6; }
-        select { background: #333; color: white; border: 1px solid #444; padding: 7px; border-radius: 5px; }
+        button { background: #00d2ff; color: #000; border: 0; padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; }
+        .btn-heat { background: #555; color: white; margin-right: 10px; }
+        .btn-heat.on { background: #ff4757; }
     </style>
 </head>
 <body>
 
-<div id="main-container">
+<div id="main">
     <div id="map"></div>
     <div id="sidebar">
-        <h3 style="margin-top:0; color:#888; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Statystyki Zawodników</h3>
-        <div id="player-stats-list"></div>
+        <h3 style="margin-top:0; color:#555; display:flex; justify-content: space-between; align-items: center;">
+            ZAWODNICY 
+            <button onclick="selectPlayer(null)" style="font-size:10px; padding:4px 8px;">WSZYSCY</button>
+        </h3>
+        <div id="player-list"></div>
     </div>
 </div>
 
 <div class="controls">
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-        <div class="time-display" id="current-time">00:00:00.0</div>
-        <div style="display: flex; gap: 15px; align-items: center;">
-            <label style="font-size: 12px; color: #888;">PRĘDKOŚĆ:</label>
-            <select id="speedMult">
-                <option value="1">1x</option>
-                <option value="2">2x</option>
-                <option value="5">5x</option>
-                <option value="10">10x</option>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <div class="time-display" id="time-val">00:00:00.0</div>
+        <div style="display:flex; gap:10px; align-items:center;">
+            <button onclick="toggleHeat()" id="heatBtn" class="btn-heat">HEATMAPA: OFF</button>
+            <select id="speed" style="background:#333; color:white; border:1px solid #444; padding:8px; border-radius:5px;">
+                <option value="1">1x</option><option value="5">5x</option><option value="10">10x</option>
             </select>
-            <button onclick="togglePlay()" id="playBtn">PLAY</button>
+            <button onclick="togglePlay()" id="btnPlay">ODTWÓRZ</button>
         </div>
     </div>
     <input type="range" id="timeline" min="0" value="0">
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://leaflet.github.io/Leaflet.heat/dist/leaflet-heat.js"></script>
+
 <script>
-    const map = L.map('map', {
-        zoomControl: true, // Włączyłem przyciski zoomu, skoro sterujesz ręcznie
-        maxZoom: 22 
-    }).setView([50.258505, 18.965950], 21);
+    const map = L.map('map', { zoomControl: true, maxZoom: 22 }).setView([50.2585, 18.9659], 21);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 19, maxZoom: 22 }).addTo(map);
 
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        maxNativeZoom: 19,
-        maxZoom: 22
-    }).addTo(map);
-
-    let rawData = [];
-    let timeTicks = [];
-    let players = {};
-    let currentIndex = 0;
-    let isPlaying = false;
-    let timer = null;
+    let data = [], ticks = [], players = {}, cur = 0, playing = false, timer = null;
+    let selectedPlayerId = null;
+    let heatEnabled = false;
+    let heatLayer = L.heatLayer([], { radius: 15, blur: 20, maxZoom: 19 }).addTo(map);
 
     const colors = ['#ff4757', '#2ed573', '#1e90ff', '#ffa500', '#eccc68'];
 
-    async function init() {
+    async function start() {
         const res = await fetch('history.php');
-        rawData = await res.json();
+        const raw = await res.json();
+        
+        // Filtr 40km/h
+        data = raw.filter(d => parseFloat(d.speed_kmh) < 40);
 
         const groups = {};
-        rawData.forEach(d => {
-            if(!groups[d.timestamp]) groups[d.timestamp] = [];
-            groups[d.timestamp].push(d);
-        });
-        timeTicks = Object.keys(groups).sort();
-        
-        document.getElementById('timeline').max = timeTicks.length - 1;
-        
-        const playerIds = [...new Set(rawData.map(d => d.player_id))];
-        
-        playerIds.forEach(id => {
-            const color = colors[id % colors.length];
-            players[id] = {
-                marker: L.circleMarker([0,0], {
-                    radius: 6, color: '#fff', weight: 2, fillColor: color, fillOpacity: 1
-                }).addTo(map),
-                trail: L.polyline([], {
-                    color: color, weight: 3, opacity: 0.6
-                }).addTo(map)
-            };
-            players[id].marker.bindTooltip("Gracz " + id);
-        });
+        data.forEach(d => { if(!groups[d.timestamp]) groups[d.timestamp] = []; groups[d.timestamp].push(d); });
+        ticks = Object.keys(groups).sort();
+        document.getElementById('timeline').max = ticks.length - 1;
 
-        renderStep(0);
+        const pIds = [...new Set(data.map(d => d.player_id))];
+        pIds.forEach(id => {
+            const c = colors[id % colors.length];
+            players[id] = {
+                m: L.circleMarker([0,0], {radius: 7, color: '#fff', weight: 2, fillColor: c, fillOpacity: 1}).addTo(map),
+                t: L.polyline([], {color: c, weight: 3, opacity: 0.3}).addTo(map)
+            };
+        });
+        show(0);
     }
 
-    function renderStep(tickIndex) {
-        currentIndex = tickIndex;
-        const timestamp = timeTicks[tickIndex];
-        document.getElementById('current-time').innerText = timestamp.split(' ')[1];
-        document.getElementById('timeline').value = tickIndex;
+    function toggleHeat() {
+        heatEnabled = !heatEnabled;
+        const btn = document.getElementById('heatBtn');
+        btn.innerText = heatEnabled ? "HEATMAPA: ON" : "HEATMAPA: OFF";
+        btn.classList.toggle('on', heatEnabled);
+        if(!heatEnabled) heatLayer.setLatLngs([]);
+        show(cur);
+    }
 
-        const frameData = rawData.filter(d => d.timestamp === timestamp);
+    function selectPlayer(id) {
+        selectedPlayerId = id;
+        document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
+        if(id !== null) document.getElementById(`p-${id}`).classList.add('active');
+        show(cur);
+    }
 
-        frameData.forEach(d => {
-            const p = players[d.player_id];
-            const pos = [d.latitude, d.longitude];
+    function show(idx) {
+        cur = idx;
+        const ts = ticks[idx];
+        if(!ts) return;
+        document.getElementById('time-val').innerText = ts.split(' ')[1];
+        document.getElementById('timeline').value = idx;
 
-            let currentDist = 0;
-            let currentVMax = 0;
+        const frame = data.filter(d => d.timestamp === ts);
+        let heatPoints = [];
+
+        // Przetwarzanie zawodników
+        Object.keys(players).forEach(id => {
+            const pId = parseInt(id);
+            const p = players[pId];
+            const pData = frame.find(d => d.player_id === pId);
+            const hist = data.filter(x => x.player_id === pId && x.timestamp <= ts);
             
-            // Filtrowanie historii dla konkretnego gracza do punktu w czasie
-            const historyToNow = rawData.filter(x => x.player_id === d.player_id && x.timestamp <= timestamp);
-            
-            historyToNow.forEach(h => {
-                currentDist += parseFloat(h.step_dist || 0);
-                let s = parseFloat(h.speed_kmh);
-                if(s > currentVMax) currentVMax = s;
+            // Oblicz statystyki
+            let dSum = 0, vMax = 0;
+            hist.forEach(h => {
+                dSum += parseFloat(h.step_dist || 0);
+                if(parseFloat(h.speed_kmh) > vMax) vMax = parseFloat(h.speed_kmh);
             });
 
-            p.marker.setLatLng(pos);
-            p.trail.setLatLngs(historyToNow.map(h => [h.latitude, h.longitude]));
+            if(pData) {
+                p.m.setLatLng([pData.latitude, pData.longitude]);
+                p.t.setLatLngs(hist.map(h => [h.latitude, h.longitude]));
+                updateUI(pId, parseFloat(pData.speed_kmh), vMax, dSum);
+                
+                // Ukrywanie/Pokazywanie markerów w zależności od wyboru
+                if(selectedPlayerId === null || selectedPlayerId === pId) {
+                    p.m.setStyle({opacity: 1, fillOpacity: 1});
+                    p.t.setStyle({opacity: 0.3});
+                } else {
+                    p.m.setStyle({opacity: 0, fillOpacity: 0});
+                    p.t.setStyle({opacity: 0});
+                }
+            }
 
-            updateSidebar(d.player_id, parseFloat(d.speed_kmh), currentVMax, currentDist);
+            // Dodawanie do heatmapy (tylko wybrany lub wszyscy)
+            if(heatEnabled) {
+                if(selectedPlayerId === null || selectedPlayerId === pId) {
+                    hist.forEach(h => heatPoints.push([h.latitude, h.longitude, 0.5]));
+                }
+            }
         });
-        
-        // Follow został usunięty stąd
+
+        if(heatEnabled) heatLayer.setLatLngs(heatPoints);
     }
 
-    function updateSidebar(id, vCurr, vMax, dist) {
-        let el = document.getElementById(`pcard-${id}`);
+    function updateUI(id, v, vm, d) {
+        let el = document.getElementById(`p-${id}`);
         if(!el) {
-            el = document.createElement('div');
-            el.id = `pcard-${id}`;
-            el.className = 'player-row';
-            el.style.borderColor = colors[id % colors.length];
-            document.getElementById('player-stats-list').appendChild(el);
+            el = document.createElement('div'); el.id = `p-${id}`; el.className = 'card';
+            el.onclick = () => selectPlayer(id);
+            el.style.borderLeftColor = colors[id % colors.length];
+            document.getElementById('player-list').appendChild(el);
         }
-
         el.innerHTML = `
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <strong style="font-size:16px;">ZAWODNIK ${id}</strong>
-                <span class="v-curr">${vCurr.toFixed(1)} <small style="font-size:10px;">km/h</small></span>
-            </div>
-            <div class="stat-grid">
-                <div><small>DYSTANS</small><br><span class="dist">${dist.toFixed(2)} m</span></div>
-                <div><small>V-MAX</small><br><span class="v-max">${vMax.toFixed(1)} km/h</span></div>
-            </div>
-        `;
+            <div style="display:flex; justify-content:space-between"><strong>GRACZ ${id}</strong> <span class="v-curr">${v.toFixed(1)} <small>km/h</small></span></div>
+            <div class="grid">
+                <div><div class="label">Dystans</div><div class="val" style="color:#2ed573">${d.toFixed(2)} m</div></div>
+                <div><div class="label">V-Max</div><div class="val" style="color:#ff4757">${vm.toFixed(1)} km/h</div></div>
+            </div>`;
     }
 
     function togglePlay() {
-        isPlaying = !isPlaying;
-        document.getElementById('playBtn').innerText = isPlaying ? 'PAUSE' : 'PLAY';
-        document.getElementById('playBtn').style.background = isPlaying ? '#ff4757' : '#00d2ff';
-
-        if(isPlaying) {
-            const mult = document.getElementById('speedMult').value;
+        playing = !playing;
+        document.getElementById('btnPlay').innerText = playing ? 'PAUZA' : 'ODTWÓRZ';
+        if(playing) {
             timer = setInterval(() => {
-                if(currentIndex < timeTicks.length - 1) {
-                    renderStep(currentIndex + 1);
-                } else {
-                    togglePlay();
-                }
-            }, 100 / mult);
-        } else {
-            clearInterval(timer);
-        }
+                if(cur < ticks.length - 1) show(cur + 1); else togglePlay();
+            }, 100 / document.getElementById('speed').value);
+        } else clearInterval(timer);
     }
 
-    document.getElementById('timeline').oninput = (e) => {
-        if(isPlaying) togglePlay();
-        renderStep(parseInt(e.target.value));
-    };
-
-    init();
+    document.getElementById('timeline').oninput = (e) => { if(playing) togglePlay(); show(parseInt(e.target.value)); };
+    start();
 </script>
 </body>
 </html>

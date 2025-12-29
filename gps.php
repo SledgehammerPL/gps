@@ -21,8 +21,9 @@ function convertToDecimal($coord_str, $hemisphere) {
     return ($hemisphere === 'S' || $hemisphere === 'W') ? $decimal * -1 : $decimal;
 }
 
-if (isset($_POST['gps_raw']) && isset($_POST['player_id'])) {
-    $player_id = (int)$_POST['player_id'];
+if (isset($_POST['gps_raw']) && isset($_POST['mac'])) {
+    $mac = $_POST['mac'];
+logToFile("PLAYER $mac - zgłosił się");
     $lines = explode("\n", trim($_POST['gps_raw']));
     
     try {
@@ -38,7 +39,7 @@ if (isset($_POST['gps_raw']) && isset($_POST['player_id'])) {
             $type = substr($parts[0], 3, 3);
             $time = $parts[1];
 
-            if (!isset($buffer[$time])) $buffer[$time] = ['player_id' => $player_id];
+            if (!isset($buffer[$time])) $buffer[$time] = ['mac' => $mac];
 
             if ($type === 'GGA' && count($parts) >= 10) {
                 $buffer[$time]['lat']   = convertToDecimal($parts[2], $parts[3]);
@@ -60,16 +61,15 @@ if (isset($_POST['gps_raw']) && isset($_POST['player_id'])) {
         }
 
         $sql = "INSERT INTO gps_data (
-                    timestamp, player_id, latitude, longitude, altitude, 
+                    timestamp, mac, latitude, longitude, altitude, 
                     num_satellites, hdop, speed_kmh, course, quality, geom
                 ) VALUES (
-                    :ts, :pid, :lat, :lon, :alt, :sats, :hdop, :speed, :course, :qual,
+                    :ts, :mac, :lat, :lon, :alt, :sats, :hdop, :speed, :course, :qual,
                     ST_Transform(ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 2180)
                 )";
         
         $stmt = $pdo->prepare($sql);
         $insertedCount = 0;
-
         foreach ($buffer as $time => $row) {
             // --- FILTR JAKOŚCI ---
             $quality = (int)($row['qual'] ?? 0);
@@ -87,7 +87,7 @@ if (isset($_POST['gps_raw']) && isset($_POST['player_id'])) {
 
             $stmt->execute([
                 ':ts'     => $fullTs,
-                ':pid'    => (int)$row['player_id'],
+                ':mac'    => $row['mac'],
                 ':lat'    => (float)$row['lat'],
                 ':lon'    => (float)$row['lon'],
                 ':alt'    => (float)($row['alt'] ?? 0),
@@ -102,7 +102,7 @@ if (isset($_POST['gps_raw']) && isset($_POST['player_id'])) {
         
         // Logujemy tylko jeśli faktycznie coś wpadło, żeby nie śmiecić w logu przy braku fixa
         if ($insertedCount > 0) {
-            logToFile("PLAYER $player_id: Wstawiono $insertedCount czystych rekordów (Sats >= 6).");
+            logToFile("PLAYER $mac: Wstawiono $insertedCount czystych rekordów (Sats >= 6).");
         }
 
     } catch (Exception $e) {
