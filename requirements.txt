@@ -1,0 +1,32 @@
+# GPS Application - Django Requirements
+# Python 3.8+
+
+# Django framework
+Django>=4.2,<5.0
+
+# PostgreSQL adapter
+psycopg2-binary>=2.9.0
+
+# PostGIS support
+django-postgis>=1.1.0
+
+# GDAL/GEOS for geospatial operations (required for PostGIS)
+# Note: GDAL needs to be installed separately on the system
+# Ubuntu/Debian: sudo apt-get install gdal-bin libgdal-dev
+# macOS: brew install gdal
+# Windows: Download from https://trac.osgeo.org/osgeo4w/
+
+# Optional: Better logging
+python-json-logger>=2.0.0
+
+# Optional: Development tools
+ipython>=8.0.0
+django-debug-toolbar>=4.0.0
+
+# Optional: Testing
+pytest>=7.0.0
+pytest-django>=4.5.0
+
+# Optional: Code quality
+flake8>=6.0.0
+black>=23.0.0
