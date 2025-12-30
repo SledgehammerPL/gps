@@ -57,14 +57,14 @@ def get_gps_history(request):
                 # Build per-timestamp delta for base
                 base_deltas = {}
                 for p in base_points:
-                    ts_key = p['timestamp'].isoformat()[:19]
+                    ts_key = p['timestamp']  # datetime with microseconds
                     base_deltas[ts_key] = (
                         float(p['latitude']) - ref_lat,
                         float(p['longitude']) - ref_lon,
                     )
-                # Apply correction
+                # Apply correction using exact timestamps (microsecond precision)
                 for rec in gps_records:
-                    ts_key = rec['timestamp'].isoformat()[:19]
+                    ts_key = rec['timestamp']
                     delta = base_deltas.get(ts_key)
                     if delta:
                         dlat, dlon = delta
@@ -138,13 +138,13 @@ def get_simple_history(request):
             ref_lon = sum(float(p['longitude']) for p in base_points) / len(base_points)
             base_deltas = {}
             for p in base_points:
-                ts_key = p['timestamp'].isoformat()[:19]
+                ts_key = p['timestamp']  # datetime with microseconds
                 base_deltas[ts_key] = (
                     float(p['latitude']) - ref_lat,
                     float(p['longitude']) - ref_lon,
                 )
             for rec in gps_data:
-                ts_key = rec['timestamp'].isoformat()[:19]
+                ts_key = rec['timestamp']
                 delta = base_deltas.get(ts_key)
                 if delta:
                     dlat, dlon = delta
