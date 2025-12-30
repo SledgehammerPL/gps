@@ -103,9 +103,9 @@ else:
             # Not used with sqlite3.
             'PASSWORD': env('DATABASE_PASSWORD'),
             # Set to empty string for localhost. Not used with sqlite3.
-            'HOST': env('DATABASE_HOST', default='127.0.0.1'),
+            'HOST': env('DATABASE_HOST'),
             # Set to empty string for default.
-            'PORT': env('DATABASE_PORT', default='5432'),
+            'PORT': env('DATABASE_PORT'),
             'TIME_ZONE': 'Europe/Warsaw',
 
             # Not used with sqlite3.
