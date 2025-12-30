@@ -37,7 +37,6 @@ class GpsData(models.Model):
         indexes = [
             models.Index(fields=['timestamp']),
             models.Index(fields=['mac']),
-            models.Index(fields=['player_id']),
             models.Index(fields=['quality']),
         ]
         ordering = ['-timestamp']
