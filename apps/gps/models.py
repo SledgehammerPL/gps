@@ -14,7 +14,6 @@ class GpsData(models.Model):
     id = models.AutoField(primary_key=True)
     timestamp = models.DateTimeField(db_index=True)
     mac = models.CharField(max_length=50, db_index=True, help_text="Device MAC address")
-    player_id = models.IntegerField(default=0, db_index=True, help_text="Player identifier")
     
     # GPS coordinates
     latitude = models.FloatField()
@@ -44,7 +43,7 @@ class GpsData(models.Model):
         ordering = ['-timestamp']
     
     def __str__(self):
-        return f"GPS[{self.player_id}] @ {self.timestamp} ({self.latitude}, {self.longitude})"
+        return f"GPS[{self.mac}] @ {self.timestamp} ({self.latitude}, {self.longitude})"
     
     def save(self, *args, **kwargs):
         """

@@ -16,82 +16,47 @@ from ...models import GpsData
 def get_gps_history(request):
     """
     Get GPS history with movement analysis using Django ORM.
-    
-    Returns JSON array with:
-    - timestamp
-    - player_id
-    - latitude (with hold logic)
-    - longitude (with hold logic)
-    - speed_kmh (zeroed when below threshold)
-    - step_dist (distance from previous point in meters)
-    
-    Query parameters:
-        threshold: Speed threshold in km/h (default: 0.8)
-        hours: Number of hours to look back (default: 24)
     """
-    threshold = float(request.GET.get('threshold', 0.8))
-    hours = int(request.GET.get('hours', 24))
+    try:
+        threshold = float(request.GET.get('threshold', 0.8))
+        hours = int(request.GET.get('hours', 24))
+    except (ValueError, TypeError):
+        threshold = 0.8
+        hours = 24
     
     try:
         # Get data from last N hours using ORM
         time_limit = timezone.now() - timedelta(hours=hours)
         
         gps_records = GpsData.objects.filter(
-            player_id__gt=0,
             quality__gt=0,
             timestamp__gt=time_limit
-        ).order_by('player_id', 'timestamp').values(
-            'timestamp', 'player_id', 'latitude', 'longitude', 'speed_kmh'
+        ).order_by('timestamp').values(
+            'timestamp', 'mac', 'latitude', 'longitude', 'speed_kmh'
         )
         
-        # Apply position hold logic in Python
+        # Convert to list and format response
         results = []
-        last_moving_pos = {}  # Track last position when moving by player_id
-        prev_record = {}  # Track previous record for distance calculation
-        
         for record in gps_records:
-            player_id = record['player_id']
             speed = float(record['speed_kmh']) if record['speed_kmh'] else 0.0
-            lat = float(record['latitude'])
-            lon = float(record['longitude'])
-            timestamp = record['timestamp']
-            
-            # Position hold logic: use last moving position if currently stationary
-            if speed >= threshold:
-                # Moving - update last known position
-                last_moving_pos[player_id] = (lat, lon)
-                display_lat, display_lon = lat, lon
-            else:
-                # Stationary - use last known moving position if available
-                if player_id in last_moving_pos:
-                    display_lat, display_lon = last_moving_pos[player_id]
-                else:
-                    display_lat, display_lon = lat, lon
-            
-            # Calculate distance from previous point
-            step_dist = 0.0
-            prev_key = (player_id, timestamp)
-            if prev_key in prev_record and speed >= threshold:
-                prev_lat, prev_lon = prev_record[prev_key]
-                step_dist = haversine_distance(prev_lat, prev_lon, display_lat, display_lon)
-            
-            # Store previous position for next iteration
-            prev_record[(player_id, timestamp)] = (display_lat, display_lon)
-            
             results.append({
-                'timestamp': timestamp.isoformat(),
-                'player_id': player_id,
-                'latitude': round(display_lat, 6),
-                'longitude': round(display_lon, 6),
+                'timestamp': record['timestamp'].isoformat(),
+                'mac': record['mac'],
+                'latitude': round(float(record['latitude']), 6),
+                'longitude': round(float(record['longitude']), 6),
                 'speed_kmh': round(speed, 2) if speed >= threshold else 0.0,
-                'step_dist': round(step_dist, 2)
+                'step_dist': 0.0
             })
         
         return JsonResponse(results, safe=False)
         
     except Exception as e:
+        import traceback
+        print(f"[ERROR] get_gps_history: {e}")
+        print(traceback.format_exc())
         return JsonResponse({
-            'error': str(e)
+            'error': str(e),
+            'type': type(e).__name__
         }, status=500)
 
 
@@ -112,11 +77,10 @@ def get_simple_history(request):
     time_limit = timezone.now() - timedelta(hours=hours)
     
     gps_data = GpsData.objects.filter(
-        player_id__gt=0,
         quality__gt=0,
         timestamp__gt=time_limit
     ).order_by('timestamp').values(
-        'timestamp', 'player_id', 'latitude', 'longitude', 'speed_kmh'
+        'timestamp', 'mac', 'latitude', 'longitude', 'speed_kmh'
     )
     
     # Convert to list and format
@@ -125,7 +89,7 @@ def get_simple_history(request):
         speed = float(item['speed_kmh']) if item['speed_kmh'] else 0.0
         results.append({
             'timestamp': item['timestamp'].isoformat(),
-            'player_id': item['player_id'],
+            'mac': item['mac'],
             'latitude': round(float(item['latitude']), 6),
             'longitude': round(float(item['longitude']), 6),
             'speed_kmh': round(speed, 2) if speed >= threshold else 0.0,
