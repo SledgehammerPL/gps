@@ -6,7 +6,6 @@ This view receives GPS data from devices via POST requests,
 parses NMEA sentences (GGA and RMC), and stores them in the database.
 """
 import logging
-import sys
 from datetime import datetime
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -16,8 +15,6 @@ from ...models import GpsData
 
 # Configure logging
 logger = logging.getLogger(__name__)
-
-print(f"[IMPORT] receiver.py loaded successfully", file=sys.stderr)
 
 
 @csrf_exempt
@@ -33,30 +30,22 @@ def receive_gps_data(request):
     Returns:
         JSON response with status
     """
-    # TEST: Sprawdzenie czy request w ogóle dociera do widoku
-    print(f"[DEBUG] REQUEST RECEIVED! Method: {request.method}, Path: {request.path}")
-    print(f"[DEBUG] POST keys: {list(request.POST.keys())}")
-    print(f"[DEBUG] GET keys: {list(request.GET.keys())}")
-    
     # Try both POST and GET parameters (in case nginx forwards as GET)
     gps_raw = request.POST.get('gps_raw', '') or request.GET.get('gps_raw', '')
     mac = request.POST.get('mac', '') or request.GET.get('mac', '')
     
-    print(f"[DEBUG] MAC: '{mac}', GPS_RAW length: {len(gps_raw)}")
-    
+    # Log incoming payload
     logger.info(f"[INCOMING] MAC: {mac}")
     logger.info(f"[INCOMING] RAW GPS: {gps_raw[:500] if gps_raw else 'EMPTY'}")
     logger.debug(f"[INCOMING] Full payload length: {len(gps_raw)} chars")
     
     if not gps_raw or not mac:
-        print(f"[DEBUG] ERROR - Missing params!")
         logger.warning(f"[ERROR] Missing parameters - MAC: {bool(mac)}, GPS_RAW: {bool(gps_raw)}")
         return JsonResponse({
             'status': 'error',
             'message': 'Missing gps_raw or mac parameter'
         }, status=400)
     
-    print(f"[DEBUG] Processing player {mac}")
     logger.info(f"[PROCESS] PLAYER {mac} - zgłosił się")
     
     lines = gps_raw.strip().split('\n')
