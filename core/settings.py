@@ -222,5 +222,10 @@ LOGGING = {
             'level' : 'DEBUG',
             'propagate' : True,
         },
+        'apps.gps': {
+            'handlers': ['file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
     },
 }
