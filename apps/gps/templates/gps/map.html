@@ -71,6 +71,7 @@
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 19, maxZoom: 22 }).addTo(map);
 
     let data = [], ticks = [], players = {}, cur = 0, playing = false, timer = null;
+    let loading = false;
     let selectedPlayerId = null;
     let heatEnabled = false;
     let heatLayer = L.heatLayer([], { radius: 15, blur: 20, maxZoom: 19 }).addTo(map);
@@ -81,10 +82,19 @@
     const matchDate = "{{ match_date|default:"" }}";
     const baseMac = "{{ base_mac|default:"" }}";
 
-    async function start() {
+    async function loadHistory() {
+        if (loading) return;
+        loading = true;
+
+        // Clear previous layers/UI
+        Object.values(players).forEach(p => { map.removeLayer(p.m); map.removeLayer(p.t); });
+        players = {};
+        document.getElementById('player-list').innerHTML = '';
+        heatLayer.setLatLngs([]);
+
         // Django URL - używamy reverse URL zamiast history.php
         const params = matchId ? `?match=${matchId}` : '';
-        const res = await fetch('{% url "gps:gps_history" %}' + params);
+        const res = await fetch('{% url "gps:gps_history" %}' + params, { cache: 'no-store' });
         const raw = await res.json();
         
         // Filtr 40km/h
@@ -98,6 +108,8 @@
         });
         ticks = Object.keys(groups).sort();
         document.getElementById('timeline').max = ticks.length - 1;
+        document.getElementById('timeline').value = 0;
+        cur = 0;
 
         const macs = [...new Set(data.map(d => d.mac))];
         macs.forEach((mac, idx) => {
@@ -108,6 +120,7 @@
             };
         });
         show(0);
+        loading = false;
     }
 
     function toggleHeat() {
@@ -191,35 +204,34 @@
             </div>`;
     }
 
-    function togglePlay() {
-        // If at the end or just started, reset to beginning
-        if(!playing && (cur >= ticks.length - 1 || cur === 0)) {
-            cur = 0;
-            document.getElementById('timeline').value = 0;
-            show(0);
+    async function togglePlay() {
+        if (playing) {
+            playing = false;
+            document.getElementById('btnPlay').innerText = 'ODTWÓRZ';
+            clearInterval(timer);
+            return;
         }
 
-        playing = !playing;
-        document.getElementById('btnPlay').innerText = playing ? 'PAUZA' : 'ODTWÓRZ';
-        if(playing) {
-            timer = setInterval(() => {
-                if(cur < ticks.length - 1) {
-                    show(cur + 1);
-                    document.getElementById('timeline').value = cur;
-                } else {
-                    togglePlay();
-                }
-            }, 100 / document.getElementById('speed').value);
-        } else {
-            clearInterval(timer);
-        }
+        // Fetch fresh history when starting playback
+        await loadHistory();
+
+        playing = true;
+        document.getElementById('btnPlay').innerText = 'PAUZA';
+        timer = setInterval(() => {
+            if(cur < ticks.length - 1) {
+                show(cur + 1);
+                document.getElementById('timeline').value = cur;
+            } else {
+                togglePlay();
+            }
+        }, 100 / document.getElementById('speed').value);
     }
 
     document.getElementById('timeline').oninput = (e) => { 
         if(playing) togglePlay(); 
         show(parseInt(e.target.value)); 
     };
-    start();
+    loadHistory();
 </script>
 </body>
 </html>
