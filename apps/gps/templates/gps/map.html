@@ -79,14 +79,18 @@
         data = raw.filter(d => parseFloat(d.speed_kmh) < 40);
 
         const groups = {};
-        data.forEach(d => { if(!groups[d.timestamp]) groups[d.timestamp] = []; groups[d.timestamp].push(d); });
+        data.forEach(d => { 
+            const ts = d.timestamp.substring(0, 19); // Wyciągnij datę i czas bez timezone
+            if(!groups[ts]) groups[ts] = []; 
+            groups[ts].push(d); 
+        });
         ticks = Object.keys(groups).sort();
         document.getElementById('timeline').max = ticks.length - 1;
 
-        const pIds = [...new Set(data.map(d => d.player_id))];
-        pIds.forEach(id => {
-            const c = colors[id % colors.length];
-            players[id] = {
+        const macs = [...new Set(data.map(d => d.mac))];
+        macs.forEach((mac, idx) => {
+            const c = colors[idx % colors.length];
+            players[mac] = {
                 m: L.circleMarker([0,0], {radius: 7, color: '#fff', weight: 2, fillColor: c, fillOpacity: 1}).addTo(map),
                 t: L.polyline([], {color: c, weight: 3, opacity: 0.3}).addTo(map)
             };
@@ -114,18 +118,16 @@
         cur = idx;
         const ts = ticks[idx];
         if(!ts) return;
-        document.getElementById('time-val').innerText = ts.split(' ')[1];
-        document.getElementById('timeline').value = idx;
+        document.getElementById('time-val').innerText = ts.substring(11); // HH:MM:SS
 
-        const frame = data.filter(d => d.timestamp === ts);
+        const frame = data.filter(d => d.timestamp.substring(0, 19) === ts);
         let heatPoints = [];
 
-        // Przetwarzanie zawodników
-        Object.keys(players).forEach(id => {
-            const pId = parseInt(id);
-            const p = players[pId];
-            const pData = frame.find(d => d.player_id === pId);
-            const hist = data.filter(x => x.player_id === pId && x.timestamp <= ts);
+        // Przetwarzanie zawodników po MAC
+        Object.keys(players).forEach(mac => {
+            const p = players[mac];
+            const pData = frame.find(d => d.mac === mac);
+            const hist = data.filter(x => x.mac === mac && x.timestamp.substring(0, 19) <= ts);
             
             // Oblicz statystyki
             let dSum = 0, vMax = 0;
@@ -137,10 +139,10 @@
             if(pData) {
                 p.m.setLatLng([pData.latitude, pData.longitude]);
                 p.t.setLatLngs(hist.map(h => [h.latitude, h.longitude]));
-                updateUI(pId, parseFloat(pData.speed_kmh), vMax, dSum);
+                updateUI(mac, parseFloat(pData.speed_kmh), vMax, dSum);
                 
                 // Ukrywanie/Pokazywanie markerów w zależności od wyboru
-                if(selectedPlayerId === null || selectedPlayerId === pId) {
+                if(selectedPlayerId === null || selectedPlayerId === mac) {
                     p.m.setStyle({opacity: 1, fillOpacity: 1});
                     p.t.setStyle({opacity: 0.3});
                 } else {
@@ -151,7 +153,7 @@
 
             // Dodawanie do heatmapy (tylko wybrany lub wszyscy)
             if(heatEnabled) {
-                if(selectedPlayerId === null || selectedPlayerId === pId) {
+                if(selectedPlayerId === null || selectedPlayerId === mac) {
                     hist.forEach(h => heatPoints.push([h.latitude, h.longitude, 0.5]));
                 }
             }
@@ -160,16 +162,17 @@
         if(heatEnabled) heatLayer.setLatLngs(heatPoints);
     }
 
-    function updateUI(id, v, vm, d) {
-        let el = document.getElementById(`p-${id}`);
+    function updateUI(mac, v, vm, d) {
+        let el = document.getElementById(`p-${mac}`);
         if(!el) {
-            el = document.createElement('div'); el.id = `p-${id}`; el.className = 'card';
-            el.onclick = () => selectPlayer(id);
-            el.style.borderLeftColor = colors[id % colors.length];
+            el = document.createElement('div'); el.id = `p-${mac}`; el.className = 'card';
+            el.onclick = () => selectPlayer(mac);
+            const idx = Object.keys(players).indexOf(mac);
+            el.style.borderLeftColor = colors[idx % colors.length];
             document.getElementById('player-list').appendChild(el);
         }
         el.innerHTML = `
-            <div style="display:flex; justify-content:space-between"><strong>GRACZ ${id}</strong> <span class="v-curr">${v.toFixed(1)} <small>km/h</small></span></div>
+            <div style="display:flex; justify-content:space-between"><strong>${mac}</strong> <span class="v-curr">${v.toFixed(1)} <small>km/h</small></span></div>
             <div class="grid">
                 <div><div class="label">Dystans</div><div class="val" style="color:#2ed573">${d.toFixed(2)} m</div></div>
                 <div><div class="label">V-Max</div><div class="val" style="color:#ff4757">${vm.toFixed(1)} km/h</div></div>
@@ -186,7 +189,10 @@
         } else clearInterval(timer);
     }
 
-    document.getElementById('timeline').oninput = (e) => { if(playing) togglePlay(); show(parseInt(e.target.value)); };
+    document.getElementById('timeline').oninput = (e) => { 
+        if(playing) togglePlay(); 
+        show(parseInt(e.target.value)); 
+    };
     start();
 </script>
 </body>
