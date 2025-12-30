@@ -9,7 +9,7 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_GET
 from ...functions import haversine_distance
-from ...models import GpsData
+from ...models import GpsData, Match
 
 
 @require_GET
@@ -23,15 +23,27 @@ def get_gps_history(request):
     except (ValueError, TypeError):
         threshold = 0.8
         hours = 24
+
+    match_id = request.GET.get('match')
+    match = None
+    if match_id:
+        try:
+            match = Match.objects.get(id=match_id)
+        except Match.DoesNotExist:
+            return JsonResponse({'error': 'Match not found'}, status=404)
     
     try:
         # Get data from last N hours using ORM
         time_limit = timezone.now() - timedelta(hours=hours)
         
-        gps_records = GpsData.objects.filter(
-            quality__gt=0,
-            timestamp__gt=time_limit
-        ).order_by('timestamp').values(
+        gps_query = GpsData.objects.filter(quality__gt=0)
+
+        if match:
+            gps_query = gps_query.filter(timestamp__date=match.date)
+        else:
+            gps_query = gps_query.filter(timestamp__gt=time_limit)
+        
+        gps_records = gps_query.order_by('timestamp').values(
             'timestamp', 'mac', 'latitude', 'longitude', 'speed_kmh'
         )
         
@@ -68,18 +80,28 @@ def get_simple_history(request):
     
     Query parameters:
         threshold: Speed threshold in km/h (default: 0.8)
-        hours: Number of hours to look back (default: 24)
+        hours: Number of hours to look back (default: 24) if match not set
+        match: Match ID to filter by match date
     """
     threshold = float(request.GET.get('threshold', 0.8))
     hours = int(request.GET.get('hours', 24))
+    match_id = request.GET.get('match')
+    match = None
+    if match_id:
+        try:
+            match = Match.objects.get(id=match_id)
+        except Match.DoesNotExist:
+            return JsonResponse({'error': 'Match not found'}, status=404)
     
-    # Get data from last N hours
+    # Get data from last N hours or match date
     time_limit = timezone.now() - timedelta(hours=hours)
+    gps_query = GpsData.objects.filter(quality__gt=0)
+    if match:
+        gps_query = gps_query.filter(timestamp__date=match.date)
+    else:
+        gps_query = gps_query.filter(timestamp__gt=time_limit)
     
-    gps_data = GpsData.objects.filter(
-        quality__gt=0,
-        timestamp__gt=time_limit
-    ).order_by('timestamp').values(
+    gps_data = gps_query.order_by('timestamp').values(
         'timestamp', 'mac', 'latitude', 'longitude', 'speed_kmh'
     )
     

@@ -43,7 +43,7 @@
 </div>
 
 <div class="controls">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
         <div class="time-display" id="time-val">00:00:00.0</div>
         <div style="display:flex; gap:10px; align-items:center;">
             <button onclick="toggleHeat()" id="heatBtn" class="btn-heat">HEATMAPA: OFF</button>
@@ -52,6 +52,13 @@
             </select>
             <button onclick="togglePlay()" id="btnPlay">ODTWÓRZ</button>
         </div>
+    </div>
+    <div id="match-info" style="font-size:12px;color:#aaa;margin-bottom:8px;">
+        {% if match_id %}
+            Mecz: {{ match_date }} {% if base_mac %}| Baza: {{ base_mac }}{% endif %}
+        {% else %}
+            Brak filtra meczu (ostatnie 24h)
+        {% endif %}
     </div>
     <input type="range" id="timeline" min="0" value="0">
 </div>
@@ -70,9 +77,14 @@
 
     const colors = ['#ff4757', '#2ed573', '#1e90ff', '#ffa500', '#eccc68'];
 
+    const matchId = {{ match_id|default:"null" }};
+    const matchDate = "{{ match_date|default:"" }}";
+    const baseMac = "{{ base_mac|default:"" }}";
+
     async function start() {
         // Django URL - używamy reverse URL zamiast history.php
-        const res = await fetch('{% url "gps:gps_history" %}');
+        const params = matchId ? `?match=${matchId}` : '';
+        const res = await fetch('{% url "gps:gps_history" %}' + params);
         const raw = await res.json();
         
         // Filtr 40km/h
