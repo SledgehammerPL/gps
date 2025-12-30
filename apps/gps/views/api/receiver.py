@@ -33,21 +33,29 @@ def receive_gps_data(request):
     gps_raw = request.POST.get('gps_raw', '')
     mac = request.POST.get('mac', '')
     
+    # Log incoming payload
+    logger.info(f"[INCOMING] MAC: {mac}")
+    logger.info(f"[INCOMING] RAW GPS: {gps_raw[:500]}")  # Log first 500 chars
+    logger.debug(f"[INCOMING] Full payload length: {len(gps_raw)} chars")
+    
     if not gps_raw or not mac:
+        logger.warning(f"[ERROR] Missing parameters - MAC: {bool(mac)}, GPS_RAW: {bool(gps_raw)}")
         return JsonResponse({
             'status': 'error',
             'message': 'Missing gps_raw or mac parameter'
         }, status=400)
     
-    logger.info(f"PLAYER {mac} - zgłosił się")
+    logger.info(f"[PROCESS] PLAYER {mac} - zgłosił się")
     
     lines = gps_raw.strip().split('\n')
+    logger.info(f"[PROCESS] Number of NMEA lines: {len(lines)}")
     buffer = {}
     
     # Parse NMEA sentences
     for line in lines:
         parts = line.strip().split(',')
         if len(parts) < 2:
+            logger.debug(f"[PARSE] Skipping malformed line: {line}")
             continue
         
         # Extract sentence type (GGA or RMC)
@@ -55,7 +63,10 @@ def receive_gps_data(request):
         time = parts[1]
         
         if not time:
+            logger.debug(f"[PARSE] No time in sentence: {line}")
             continue
+        
+        logger.debug(f"[PARSE] Sentence type: {sentence_type}, Time: {time}")
         
         # Initialize buffer entry
         if time not in buffer:
@@ -84,6 +95,7 @@ def receive_gps_data(request):
     
     # Insert valid records into database
     inserted_count = 0
+    skipped_count = 0
     
     for time, row in buffer.items():
         # Quality filter: skip if no coordinates, quality 0, or less than 6 satellites
@@ -93,6 +105,17 @@ def receive_gps_data(request):
         date_str = row.get('date', '')
         
         if lat is False or quality == 0 or sats < 6 or not date_str:
+            reason = []
+            if lat is False:
+                reason.append("no_coords")
+            if quality == 0:
+                reason.append("quality_0")
+            if sats < 6:
+                reason.append(f"sats_{sats}")
+            if not date_str:
+                reason.append("no_date")
+            logger.warning(f"[SKIP] Time: {time}, Reason: {','.join(reason)}, Row: {row}")
+            skipped_count += 1
             continue
         
         try:
@@ -123,15 +146,16 @@ def receive_gps_data(request):
             )
             gps_data.save()
             inserted_count += 1
+            logger.debug(f"[INSERT] Inserted record: {timestamp}, Lat: {row['lat']}, Lon: {row['lon']}, Sats: {sats}")
             
         except Exception as e:
-            logger.error(f"Error inserting GPS record: {e}")
+            logger.error(f"[ERROR] Error inserting GPS record: {e}, Row: {row}")
             continue
     
-    if inserted_count > 0:
-        logger.info(f"PLAYER {mac}: Wstawiono {inserted_count} czystych rekordów (Sats >= 6).")
+    logger.info(f"[RESULT] PLAYER {mac}: Inserted {inserted_count} records, Skipped {skipped_count} records")
     
     return JsonResponse({
         'status': 'success',
-        'inserted': inserted_count
+        'inserted': inserted_count,
+        'skipped': skipped_count
     })
