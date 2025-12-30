@@ -45,16 +45,16 @@ class GpsDataAdmin(OSMGeoAdmin):
     """
     Admin interface for GPS data with map display
     """
-    list_display = ['id', 'timestamp', 'player', 'mac', 'latitude', 'longitude', 
+    list_display = ['id', 'timestamp', 'mac', 'latitude', 'longitude',
                     'speed_kmh', 'num_satellites', 'quality']
-    list_filter = ['quality', 'timestamp', 'player', 'match']
-    search_fields = ['mac', 'player__first_name', 'player__last_name']
+    list_filter = ['quality', 'timestamp']
+    search_fields = ['mac']
     date_hierarchy = 'timestamp'
     readonly_fields = ['geom']
     
     fieldsets = (
         ('Basic Info', {
-            'fields': ('timestamp', 'mac', 'player', 'match')
+            'fields': ('timestamp', 'mac')
         }),
         ('Location', {
             'fields': ('latitude', 'longitude', 'altitude', 'geom')
