@@ -77,8 +77,8 @@ class GpsData(models.Model):
     mac = models.CharField(max_length=50, db_index=True, help_text="Device MAC address")
     
     # Foreign keys - optional (can be null if MAC not yet assigned to player/match)
-    match = models.ForeignKey(Match, on_delete=models.SET_NULL, null=True, blank=True, related_name='gps_data')
-    player = models.ForeignKey(Player, on_delete=models.SET_NULL, null=True, blank=True, related_name='gps_data')
+    match = models.ForeignKey(Match, on_delete=models.SET_NULL, null=True, blank=True, related_name='gps_data', db_index=True)
+    player = models.ForeignKey(Player, on_delete=models.SET_NULL, null=True, blank=True, related_name='gps_data', db_index=True)
     
     # GPS coordinates
     latitude = models.FloatField()
@@ -99,13 +99,6 @@ class GpsData(models.Model):
     
     class Meta:
         db_table = 'gps_data'
-        indexes = [
-            models.Index(fields=['timestamp']),
-            models.Index(fields=['mac']),
-            models.Index(fields=['quality']),
-            models.Index(fields=['player']),
-            models.Index(fields=['match']),
-        ]
         ordering = ['-timestamp']
     
     def __str__(self):
