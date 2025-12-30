@@ -115,7 +115,7 @@ def receive_gps_data(request):
                 reason.append(f"sats_{sats}")
             if not date_str:
                 reason.append("no_date")
-            logger.warning(f"[SKIP] Time: {time}, Reason: {','.join(reason)}, Row: {row}")
+            logger.warning(f"[SKIP] Time: {time_str}, Reason: {','.join(reason)}, Row: {row}")
             skipped_count += 1
             continue
         
