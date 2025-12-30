@@ -94,18 +94,13 @@ if 'test' in sys.argv:
 else:
     DATABASES = {
         'default': {
-            # Add 'postgresql_psycopg2','postgresql', 'mysql', 'sqlite3' or 'oracle'.
-            'ENGINE': 'django.db.backends.postgresql_psycopg2',
-            # Or path to database file if using sqlite3.
+            # PostGIS backend dla GIS support
+            'ENGINE': 'django.contrib.gis.db.backends.postgis',
             'NAME': env('DATABASE_NAME'),
-            # Not used with sqlite3.
             'USER': env('DATABASE_USER'),
-            # Not used with sqlite3.
             'PASSWORD': env('DATABASE_PASSWORD'),
-            # Set to empty string for localhost. Not used with sqlite3.
-            'HOST': env('DATABASE_HOST'),
-            # Set to empty string for default.
-            'PORT': env('DATABASE_PORT'),
+            'HOST': env.str('DATABASE_HOST', default='127.0.0.1'),
+            'PORT': env.int('DATABASE_PORT', default=5432),
             'TIME_ZONE': 'Europe/Warsaw',
 
             # Not used with sqlite3.

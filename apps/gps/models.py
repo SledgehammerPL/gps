@@ -29,6 +29,9 @@ class GpsData(models.Model):
     speed_kmh = models.FloatField(default=0.0, help_text="Speed in km/h")
     course = models.FloatField(default=0.0, help_text="Course over ground in degrees")
     
+    # PostGIS geometry field - POINT in EPSG:2180 (Polish coordinate system)
+    geom = models.PointField(srid=2180, null=True, blank=True)
+    
     class Meta:
         db_table = 'gps_data'
         indexes = [
@@ -40,3 +43,19 @@ class GpsData(models.Model):
     
     def __str__(self):
         return f"GPS[{self.mac}] @ {self.timestamp} ({self.latitude}, {self.longitude})"
+    
+    def save(self, *args, **kwargs):
+        """
+        Override save to automatically create geometry point from lat/lon
+        Transforms from WGS84 (EPSG:4326) to PUWG 1992 (EPSG:2180)
+        """
+        from django.contrib.gis.geos import Point
+        
+        if self.latitude and self.longitude:
+            # Create point in WGS84 (4326)
+            point = Point(self.longitude, self.latitude, srid=4326)
+            # Transform to EPSG:2180
+            point.transform(2180)
+            self.geom = point
+        
+        super().save(*args, **kwargs)
