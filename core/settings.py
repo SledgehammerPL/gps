@@ -99,8 +99,8 @@ else:
             'NAME': env('DATABASE_NAME'),
             'USER': env('DATABASE_USER'),
             'PASSWORD': env('DATABASE_PASSWORD'),
-            'HOST': env.str('DATABASE_HOST', default='127.0.0.1'),
-            'PORT': env.int('DATABASE_PORT', default=5432),
+            'HOST': env.str('DATABASE_HOST'),
+            'PORT': env.int('DATABASE_PORT'),
             'TIME_ZONE': 'Europe/Warsaw',
 
             # Not used with sqlite3.
