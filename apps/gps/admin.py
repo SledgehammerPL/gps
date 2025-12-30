@@ -8,9 +8,9 @@ from .models import Match, Player, MacAssignment, GpsData
 
 @admin.register(Match)
 class MatchAdmin(admin.ModelAdmin):
-    list_display = ['id', 'date', 'description']
+    list_display = ['id', 'date', 'base_mac', 'description']
     list_filter = ['date']
-    search_fields = ['description']
+    search_fields = ['description', 'base_mac']
     date_hierarchy = 'date'
 
 

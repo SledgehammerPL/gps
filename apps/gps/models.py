@@ -13,13 +13,20 @@ class Match(models.Model):
     id = models.AutoField(primary_key=True)
     date = models.DateField(db_index=True, help_text="Match date")
     description = models.CharField(max_length=255, blank=True, null=True)
+    base_mac = models.CharField(
+        max_length=50, 
+        blank=True, 
+        null=True,
+        db_index=True,
+        help_text="MAC address of stationary base station"
+    )
     
     class Meta:
         db_table = 'match'
         ordering = ['-date']
     
     def __str__(self):
-        return f"Match {self.date}"
+        return f"Match {self.date}" + (f" (base: {self.base_mac})" if self.base_mac else "")
 
 
 class Player(models.Model):

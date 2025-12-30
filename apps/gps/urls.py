@@ -4,7 +4,7 @@ GPS-specific routes
 """
 from django.urls import path
 from .views.web import gps_map_view
-from .views.api import receive_gps_data, get_gps_history, get_simple_history
+from .views.api import receive_gps_data, get_gps_history, get_simple_history, stability
 
 app_name = 'gps'
 
@@ -26,4 +26,8 @@ urlpatterns = [
     # Alternative simple history endpoint (Django ORM only)
     # Usage: GET /history/simple/
     path('history/simple/', get_simple_history, name='simple_history'),
+    
+    # GPS Signal Stability Analysis
+    # Usage: GET /stability/ or /stability/?match=1&mac=D8F15B0A3E69
+    path('stability/', stability, name='stability'),
 ]
