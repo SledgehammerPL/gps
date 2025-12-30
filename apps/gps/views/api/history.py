@@ -43,9 +43,33 @@ def get_gps_history(request):
         else:
             gps_query = gps_query.filter(timestamp__gt=time_limit)
         
-        gps_records = gps_query.order_by('timestamp').values(
+        gps_records = list(gps_query.order_by('timestamp').values(
             'timestamp', 'mac', 'latitude', 'longitude', 'speed_kmh'
-        )
+        ))
+
+        # Base-station correction: keep base_mac fixed, apply its drift delta to all points at same timestamp
+        if match and match.base_mac:
+            base_mac = match.base_mac
+            base_points = [r for r in gps_records if r['mac'] == base_mac]
+            if base_points:
+                ref_lat = sum(float(p['latitude']) for p in base_points) / len(base_points)
+                ref_lon = sum(float(p['longitude']) for p in base_points) / len(base_points)
+                # Build per-timestamp delta for base
+                base_deltas = {}
+                for p in base_points:
+                    ts_key = p['timestamp'].isoformat()[:19]
+                    base_deltas[ts_key] = (
+                        float(p['latitude']) - ref_lat,
+                        float(p['longitude']) - ref_lon,
+                    )
+                # Apply correction
+                for rec in gps_records:
+                    ts_key = rec['timestamp'].isoformat()[:19]
+                    delta = base_deltas.get(ts_key)
+                    if delta:
+                        dlat, dlon = delta
+                        rec['latitude'] = float(rec['latitude']) - dlat
+                        rec['longitude'] = float(rec['longitude']) - dlon
         
         # Convert to list and format response
         results = []
@@ -101,9 +125,31 @@ def get_simple_history(request):
     else:
         gps_query = gps_query.filter(timestamp__gt=time_limit)
     
-    gps_data = gps_query.order_by('timestamp').values(
+    gps_data = list(gps_query.order_by('timestamp').values(
         'timestamp', 'mac', 'latitude', 'longitude', 'speed_kmh'
-    )
+    ))
+
+    # Base-station correction when match and base_mac present
+    if match and match.base_mac:
+        base_mac = match.base_mac
+        base_points = [r for r in gps_data if r['mac'] == base_mac]
+        if base_points:
+            ref_lat = sum(float(p['latitude']) for p in base_points) / len(base_points)
+            ref_lon = sum(float(p['longitude']) for p in base_points) / len(base_points)
+            base_deltas = {}
+            for p in base_points:
+                ts_key = p['timestamp'].isoformat()[:19]
+                base_deltas[ts_key] = (
+                    float(p['latitude']) - ref_lat,
+                    float(p['longitude']) - ref_lon,
+                )
+            for rec in gps_data:
+                ts_key = rec['timestamp'].isoformat()[:19]
+                delta = base_deltas.get(ts_key)
+                if delta:
+                    dlat, dlon = delta
+                    rec['latitude'] = float(rec['latitude']) - dlat
+                    rec['longitude'] = float(rec['longitude']) - dlon
     
     # Convert to list and format
     results = []
