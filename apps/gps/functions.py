@@ -1,19 +1,8 @@
 """
-GPS Data Receiver View
-Converted from gps.php
-
-This view receives GPS data from devices via POST requests,
-parses NMEA sentences (GGA and RMC), and stores them in the database.
+GPS Helper Functions
+Utility functions for GPS data processing
 """
-import logging
-from datetime import datetime
-from django.http import JsonResponse, HttpResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
-from .models import GpsData
-
-# Configure logging
-logger = logging.getLogger(__name__)
+import math
 
 
 def convert_to_decimal(coord_str, hemisphere):
