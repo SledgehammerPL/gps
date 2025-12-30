@@ -61,44 +61,44 @@ def receive_gps_data(request):
         
         # Extract sentence type (GGA or RMC)
         sentence_type = parts[0][3:6] if len(parts[0]) >= 6 else ''
-        time = parts[1]
+        time_str = parts[1]  # hhmmss or hhmmss.sss
         
-        if not time:
+        if not time_str:
             logger.debug(f"[PARSE] No time in sentence: {line}")
             continue
         
-        logger.debug(f"[PARSE] Sentence type: {sentence_type}, Time: {time}")
+        logger.debug(f"[PARSE] Sentence type: {sentence_type}, Time: {time_str}")
         
         # Initialize buffer entry
-        if time not in buffer:
-            buffer[time] = {'mac': mac}
+        if time_str not in buffer:
+            buffer[time_str] = {'mac': mac}
         
         # Parse GGA sentence (position and quality)
         if sentence_type == 'GGA' and len(parts) >= 10:
-            buffer[time]['lat'] = convert_to_decimal(parts[2], parts[3])
-            buffer[time]['lon'] = convert_to_decimal(parts[4], parts[5])
-            buffer[time]['qual'] = int(parts[6]) if parts[6] else 0
-            buffer[time]['sats'] = int(parts[7]) if parts[7] else 0
-            buffer[time]['hdop'] = float(parts[8]) if parts[8] else 0.0
-            buffer[time]['alt'] = float(parts[9]) if parts[9] else 0.0
+            buffer[time_str]['lat'] = convert_to_decimal(parts[2], parts[3])
+            buffer[time_str]['lon'] = convert_to_decimal(parts[4], parts[5])
+            buffer[time_str]['qual'] = int(parts[6]) if parts[6] else 0
+            buffer[time_str]['sats'] = int(parts[7]) if parts[7] else 0
+            buffer[time_str]['hdop'] = float(parts[8]) if parts[8] else 0.0
+            buffer[time_str]['alt'] = float(parts[9]) if parts[9] else 0.0
         
         # Parse RMC sentence (speed, course, date)
         elif sentence_type == 'RMC' and len(parts) >= 10:
             # Convert speed from knots to km/h (1 knot = 1.852 km/h)
-            buffer[time]['speed'] = float(parts[7]) * 1.852 if parts[7] else 0.0
-            buffer[time]['course'] = float(parts[8]) if parts[8] else 0.0
-            buffer[time]['date'] = parts[9]
+            buffer[time_str]['speed'] = float(parts[7]) * 1.852 if parts[7] else 0.0
+            buffer[time_str]['course'] = float(parts[8]) if parts[8] else 0.0
+            buffer[time_str]['date'] = parts[9]
             
             # Use RMC position if GGA not available
-            if 'lat' not in buffer[time] or buffer[time]['lat'] is False:
-                buffer[time]['lat'] = convert_to_decimal(parts[3], parts[4])
-                buffer[time]['lon'] = convert_to_decimal(parts[5], parts[6])
+            if 'lat' not in buffer[time_str] or buffer[time_str]['lat'] is False:
+                buffer[time_str]['lat'] = convert_to_decimal(parts[3], parts[4])
+                buffer[time_str]['lon'] = convert_to_decimal(parts[5], parts[6])
     
     # Insert valid records into database
     inserted_count = 0
     skipped_count = 0
     
-    for time, row in buffer.items():
+    for time_str, row in buffer.items():
         # Quality filter: skip if no coordinates, quality 0, or less than 6 satellites
         quality = row.get('qual', 0)
         sats = row.get('sats', 0)
@@ -121,16 +121,25 @@ def receive_gps_data(request):
         
         try:
             # Parse date and time
-            # Date format: DDMMYY, Time format: HHMMSS
+            # Date format: DDMMYY, Time format: HHMMSS or HHMMSS.sss
             day = date_str[0:2]
             month = date_str[2:4]
             year = f"20{date_str[4:6]}"
-            hour = time[0:2]
-            minute = time[2:4]
-            second = time[4:6] if len(time) >= 6 else '00'
-            
-            timestamp_str = f"{year}-{month}-{day} {hour}:{minute}:{second}"
-            timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
+            hour = time_str[0:2]
+            minute = time_str[2:4]
+            sec_part = time_str[4:] if len(time_str) > 4 else '00'
+
+            if '.' in sec_part:
+                sec_int_str, micro_str = sec_part.split('.', 1)
+                micro_str = (micro_str + '000000')[:6]  # pad / trim to 6 digits
+            else:
+                sec_int_str, micro_str = sec_part, '000000'
+
+            second = sec_int_str if sec_int_str else '00'
+            micro = int(micro_str)
+
+            timestamp_str = f"{year}-{month}-{day} {hour}:{minute}:{second}.{micro:06d}"
+            timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S.%f')
             
             # Create GPS data record
             gps_data = GpsData(
