@@ -7,6 +7,7 @@ parses NMEA sentences (GGA and RMC), and stores them in the database.
 """
 import logging
 from datetime import datetime
+from django.utils import timezone
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
@@ -140,6 +141,9 @@ def receive_gps_data(request):
 
             timestamp_str = f"{year}-{month}-{day} {hour}:{minute}:{second}.{micro:06d}"
             timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S.%f')
+            # NMEA time is UTC; store as aware UTC datetime
+            if timezone.is_naive(timestamp):
+                timestamp = timezone.make_aware(timestamp, timezone=timezone.utc)
             
             # Create GPS data record
             gps_data = GpsData(
