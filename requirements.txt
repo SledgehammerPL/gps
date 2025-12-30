@@ -7,9 +7,6 @@ Django>=4.2,<5.0
 # PostgreSQL adapter
 psycopg2-binary>=2.9.0
 
-# PostGIS support
-django-postgis>=1.1.0
-
 # GDAL/GEOS for geospatial operations (required for PostGIS)
 # Note: GDAL needs to be installed separately on the system
 # Ubuntu/Debian: sudo apt-get install gdal-bin libgdal-dev
