@@ -6,6 +6,7 @@ This view receives GPS data from devices via POST requests,
 parses NMEA sentences (GGA and RMC), and stores them in the database.
 """
 import logging
+import sys
 from datetime import datetime
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -15,6 +16,8 @@ from ...models import GpsData
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+print(f"[IMPORT] receiver.py loaded successfully", file=sys.stderr)
 
 
 @csrf_exempt
