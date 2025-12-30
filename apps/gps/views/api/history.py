@@ -158,8 +158,8 @@ def get_simple_history(request):
         results.append({
             'timestamp': item['timestamp'].isoformat(),
             'mac': item['mac'],
-            'latitude': round(float(item['latitude']), 6),
-            'longitude': round(float(item['longitude']), 6),
+            'latitude': float(item['latitude']),
+            'longitude': float(item['longitude']),
             'speed_kmh': round(speed, 2) if speed >= threshold else 0.0,
             'step_dist': 0.0
         })
