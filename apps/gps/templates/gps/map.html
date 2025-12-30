@@ -192,13 +192,27 @@
     }
 
     function togglePlay() {
+        // If at the end or just started, reset to beginning
+        if(!playing && (cur >= ticks.length - 1 || cur === 0)) {
+            cur = 0;
+            document.getElementById('timeline').value = 0;
+            show(0);
+        }
+
         playing = !playing;
         document.getElementById('btnPlay').innerText = playing ? 'PAUZA' : 'ODTWÓRZ';
         if(playing) {
             timer = setInterval(() => {
-                if(cur < ticks.length - 1) show(cur + 1); else togglePlay();
+                if(cur < ticks.length - 1) {
+                    show(cur + 1);
+                    document.getElementById('timeline').value = cur;
+                } else {
+                    togglePlay();
+                }
             }, 100 / document.getElementById('speed').value);
-        } else clearInterval(timer);
+        } else {
+            clearInterval(timer);
+        }
     }
 
     document.getElementById('timeline').oninput = (e) => { 
