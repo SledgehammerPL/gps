@@ -47,36 +47,6 @@ def get_gps_history(request):
             'timestamp', 'mac', 'latitude', 'longitude', 'speed_kmh'
         ))
 
-        def smooth_three_point(records):
-            """
-            Three-point moving average per device:
-            - 1st point: raw
-            - 2nd point: avg of first two
-            - 3rd+ points: avg of last three raw points (i, i-1, i-2)
-            """
-            by_mac = {}
-            for rec in records:
-                by_mac.setdefault(rec['mac'], []).append(rec)
-
-            smoothed = []
-            for recs in by_mac.values():
-                recs.sort(key=lambda r: r['timestamp'])
-                window = []
-                for rec in recs:
-                    window.append(rec)
-                    if len(window) > 3:
-                        window.pop(0)
-
-                    lat_avg = sum(float(r['latitude']) for r in window) / len(window)
-                    lon_avg = sum(float(r['longitude']) for r in window) / len(window)
-
-                    new_rec = rec.copy()
-                    new_rec['latitude'] = lat_avg
-                    new_rec['longitude'] = lon_avg
-                    smoothed.append(new_rec)
-
-            return sorted(smoothed, key=lambda r: r['timestamp'])
-
         # Base-station correction: keep base_mac fixed, apply its drift delta to all points at same timestamp
         if match and match.base_mac:
             base_mac = match.base_mac
@@ -100,9 +70,12 @@ def get_gps_history(request):
                         dlat, dlon = delta
                         rec['latitude'] = float(rec['latitude']) - dlat
                         rec['longitude'] = float(rec['longitude']) - dlon
-
-        # Smooth positions per device (3-point moving average)
-        gps_records = smooth_three_point(gps_records)
+        
+        # Filter: only even tenths of second (0.0, 0.2, 0.4, 0.6, 0.8) - skok co 0.2s
+        gps_records = [
+            rec for rec in gps_records 
+            if (rec['timestamp'].microsecond // 100000) % 2 == 0
+        ]
         
         # Convert to list and format response
         results = []
