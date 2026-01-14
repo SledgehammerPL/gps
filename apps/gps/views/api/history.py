@@ -47,6 +47,32 @@ def get_gps_history(request):
             'timestamp', 'mac', 'latitude', 'longitude', 'speed_kmh'
         ))
 
+        def smooth_two_point(records):
+            """
+            Two-point moving average of positions per device:
+            first point stays the same, each next is avg of current and previous.
+            """
+            by_mac = {}
+            for rec in records:
+                by_mac.setdefault(rec['mac'], []).append(rec)
+
+            smoothed = []
+            for recs in by_mac.values():
+                recs.sort(key=lambda r: r['timestamp'])
+                for idx, rec in enumerate(recs):
+                    new_rec = rec.copy()
+                    if idx > 0:
+                        prev = recs[idx - 1]
+                        new_rec['latitude'] = (
+                            float(prev['latitude']) + float(rec['latitude'])
+                        ) / 2
+                        new_rec['longitude'] = (
+                            float(prev['longitude']) + float(rec['longitude'])
+                        ) / 2
+                    smoothed.append(new_rec)
+
+            return sorted(smoothed, key=lambda r: r['timestamp'])
+
         # Base-station correction: keep base_mac fixed, apply its drift delta to all points at same timestamp
         if match and match.base_mac:
             base_mac = match.base_mac
@@ -70,6 +96,9 @@ def get_gps_history(request):
                         dlat, dlon = delta
                         rec['latitude'] = float(rec['latitude']) - dlat
                         rec['longitude'] = float(rec['longitude']) - dlon
+
+        # Smooth positions per device (first raw point, then average with previous raw)
+        gps_records = smooth_two_point(gps_records)
         
         # Convert to list and format response
         results = []
