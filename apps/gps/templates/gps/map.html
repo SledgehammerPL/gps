@@ -212,8 +212,10 @@
             return;
         }
 
-        // Fetch fresh history when starting playback
-        await loadHistory();
+        // Load history only if data is empty (first time)
+        if (data.length === 0) {
+            await loadHistory();
+        }
 
         playing = true;
         document.getElementById('btnPlay').innerText = 'PAUZA';
