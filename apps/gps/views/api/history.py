@@ -47,10 +47,12 @@ def get_gps_history(request):
             'timestamp', 'mac', 'latitude', 'longitude', 'speed_kmh'
         ))
 
-        def smooth_two_point(records):
+        def smooth_three_point(records):
             """
-            Two-point moving average of positions per device:
-            first point stays the same, each next is avg of current and previous.
+            Three-point moving average per device:
+            - 1st point: raw
+            - 2nd point: avg of first two
+            - 3rd+ points: avg of last three raw points (i, i-1, i-2)
             """
             by_mac = {}
             for rec in records:
@@ -59,16 +61,18 @@ def get_gps_history(request):
             smoothed = []
             for recs in by_mac.values():
                 recs.sort(key=lambda r: r['timestamp'])
-                for idx, rec in enumerate(recs):
+                window = []
+                for rec in recs:
+                    window.append(rec)
+                    if len(window) > 3:
+                        window.pop(0)
+
+                    lat_avg = sum(float(r['latitude']) for r in window) / len(window)
+                    lon_avg = sum(float(r['longitude']) for r in window) / len(window)
+
                     new_rec = rec.copy()
-                    if idx > 0:
-                        prev = recs[idx - 1]
-                        new_rec['latitude'] = (
-                            float(prev['latitude']) + float(rec['latitude'])
-                        ) / 2
-                        new_rec['longitude'] = (
-                            float(prev['longitude']) + float(rec['longitude'])
-                        ) / 2
+                    new_rec['latitude'] = lat_avg
+                    new_rec['longitude'] = lon_avg
                     smoothed.append(new_rec)
 
             return sorted(smoothed, key=lambda r: r['timestamp'])
@@ -97,8 +101,8 @@ def get_gps_history(request):
                         rec['latitude'] = float(rec['latitude']) - dlat
                         rec['longitude'] = float(rec['longitude']) - dlon
 
-        # Smooth positions per device (first raw point, then average with previous raw)
-        gps_records = smooth_two_point(gps_records)
+        # Smooth positions per device (3-point moving average)
+        gps_records = smooth_three_point(gps_records)
         
         # Convert to list and format response
         results = []
