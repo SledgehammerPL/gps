@@ -75,12 +75,12 @@
         const lat = e.latlng.lat.toFixed(6);
         const lng = e.latlng.lng.toFixed(6);
         if (matchId) {
-            const msg = `Współrzędne:\n${lat}, ${lng}\n\nUstawić jako bazę?`;
+            const msg = `Współrzędne:\n${lat}. ${lng}\n\nUstawić jako bazę?`;
             if (confirm(msg)) {
                 setBaseCoords(lat, lng);
             }
         } else {
-            alert(`Współrzędne:\n${lat}, ${lng}`);
+            alert(`Współrzędne:\n${lat}. ${lng}`);
         }
     });
 
@@ -124,7 +124,7 @@
             
             if (res.ok) {
                 const data = await res.json();
-                alert(`Baza zaktualizowana:\n${data.base_latitude}, ${data.base_longitude}`);
+                alert(`Baza zaktualizowana:\n${data.base_latitude}. ${data.base_longitude}`);
             } else {
                 alert('Błąd przy aktualizacji bazy');
             }
