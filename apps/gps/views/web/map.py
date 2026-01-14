@@ -23,6 +23,8 @@ def gps_map_view(request):
             context['match_id'] = match.id
             context['match_date'] = match.date.isoformat()
             context['base_mac'] = match.base_mac or ''
+            context['base_latitude'] = match.base_latitude
+            context['base_longitude'] = match.base_longitude
         except Match.DoesNotExist:
             raise Http404("Match not found")
 

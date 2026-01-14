@@ -95,6 +95,20 @@
     const matchId = {{ match_id|default:"null" }};
     const matchDate = "{{ match_date|default:"" }}";
     const baseMac = "{{ base_mac|default:"" }}";
+    const baseLatitude = {{ base_latitude|default:"null" }};
+    const baseLongitude = {{ base_longitude|default:"null" }};
+
+    // Add base station marker if coordinates exist
+    let baseMarker = null;
+    if (baseLatitude !== null && baseLongitude !== null) {
+        baseMarker = L.circleMarker([baseLatitude, baseLongitude], {
+            radius: 12,
+            color: '#ffeb3b',
+            weight: 3,
+            fillColor: '#ffeb3b',
+            fillOpacity: 0.8
+        }).bindPopup('Stacja Bazowa').addTo(map);
+    }
 
     async function setBaseCoords(lat, lng) {
         try {
