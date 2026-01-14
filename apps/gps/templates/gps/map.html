@@ -70,6 +70,20 @@
     const map = L.map('map', { zoomControl: true, maxZoom: 22 }).setView([50.2585, 18.9659], 21);
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 19, maxZoom: 22 }).addTo(map);
 
+    // Click on map to show coordinates
+    map.on('click', (e) => {
+        const lat = e.latlng.lat.toFixed(6);
+        const lng = e.latlng.lng.toFixed(6);
+        if (matchId) {
+            const msg = `Współrzędne:\n${lat}, ${lng}\n\nUstawić jako bazę?`;
+            if (confirm(msg)) {
+                setBaseCoords(lat, lng);
+            }
+        } else {
+            alert(`Współrzędne:\n${lat}, ${lng}`);
+        }
+    });
+
     let data = [], ticks = [], players = {}, cur = 0, playing = false, timer = null;
     let loading = false;
     let selectedPlayerId = null;
@@ -81,6 +95,29 @@
     const matchId = {{ match_id|default:"null" }};
     const matchDate = "{{ match_date|default:"" }}";
     const baseMac = "{{ base_mac|default:"" }}";
+
+    async function setBaseCoords(lat, lng) {
+        try {
+            const formData = new FormData();
+            formData.append('match_id', matchId);
+            formData.append('latitude', lat);
+            formData.append('longitude', lng);
+            
+            const res = await fetch('{% url "gps:update_base_coords" %}', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                alert(`Baza zaktualizowana:\n${data.base_latitude}, ${data.base_longitude}`);
+            } else {
+                alert('Błąd przy aktualizacji bazy');
+            }
+        } catch (e) {
+            alert(`Błąd: ${e.message}`);
+        }
+    }
 
     async function loadHistory() {
         if (loading) return;

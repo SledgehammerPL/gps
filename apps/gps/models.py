@@ -20,6 +20,16 @@ class Match(models.Model):
         db_index=True,
         help_text="MAC address of stationary base station"
     )
+    base_latitude = models.FloatField(
+        blank=True,
+        null=True,
+        help_text="Latitude of base station"
+    )
+    base_longitude = models.FloatField(
+        blank=True,
+        null=True,
+        help_text="Longitude of base station"
+    )
     
     class Meta:
         db_table = 'match'
