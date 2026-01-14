@@ -74,7 +74,7 @@ def get_gps_history(request):
         # Filter: only even tenths of second (0.0, 0.2, 0.4, 0.6, 0.8) - skok co 0.2s
         gps_records = [
             rec for rec in gps_records 
-            if (rec['timestamp'].microsecond // 100000) % 2 == 0
+            if (rec['timestamp'].microsecond // 100000) % 1 == 0
         ]
         
         # Convert to list and format response
