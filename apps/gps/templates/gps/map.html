@@ -119,6 +119,12 @@
                 t: L.polyline([], {color: c, weight: 3, opacity: 0.3}).addTo(map)
             };
         });
+        
+        // Set map center to first data point
+        if (data.length > 0) {
+            map.setView([data[0].latitude, data[0].longitude], 21);
+        }
+        
         show(0);
         loading = false;
     }
