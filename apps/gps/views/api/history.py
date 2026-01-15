@@ -57,10 +57,12 @@ def get_gps_history(request):
         
         # Process ticks in chronological order with base correction
         corrected_records = []
-        if match and match.base_mac:
+        if match and match.base_mac and match.base_latitude is not None and match.base_longitude is not None:
             base_mac = match.base_mac
-            base_lat = match.base_latitude
-            base_lon = match.base_longitude
+            base_lat = float(match.base_latitude)
+            base_lon = float(match.base_longitude)
+            
+            print(f"[DEBUG] Base correction enabled: MAC={base_mac}, Lat={base_lat}, Lon={base_lon}")
             
             for tick_key in sorted(ticks.keys()):
                 tick_records = ticks[tick_key]
@@ -77,20 +79,21 @@ def get_gps_history(request):
                     continue
                 
                 # Calculate correction: difference between base_mac position and known base coordinates
-                if base_lat is not None and base_lon is not None:
-                    correction_lat = base_lat - float(base_record['latitude'])
-                    correction_lon = base_lon - float(base_record['longitude'])
-                    
-                    # Apply correction to all records in this tick
-                    for rec in tick_records:
-                        rec['latitude'] = float(rec['latitude']) + correction_lat
-                        rec['longitude'] = float(rec['longitude']) + correction_lon
-                        corrected_records.append(rec)
-                else:
-                    # No base coordinates defined, keep original
-                    corrected_records.extend(tick_records)
+                base_rec_lat = float(base_record['latitude'])
+                base_rec_lon = float(base_record['longitude'])
+                correction_lat = base_lat - base_rec_lat
+                correction_lon = base_lon - base_rec_lon
+                
+                # Apply correction to all records in this tick
+                for rec in tick_records:
+                    original_lat = float(rec['latitude'])
+                    original_lon = float(rec['longitude'])
+                    rec['latitude'] = original_lat + correction_lat
+                    rec['longitude'] = original_lon + correction_lon
+                    corrected_records.append(rec)
         else:
             # No base correction, flatten all ticks
+            print(f"[DEBUG] No base correction - match: {match}, base_mac: {match.base_mac if match else None}")
             for tick_key in sorted(ticks.keys()):
                 corrected_records.extend(ticks[tick_key])
         
@@ -164,10 +167,12 @@ def get_simple_history(request):
     
     # Process ticks in chronological order with base correction
     corrected_records = []
-    if match and match.base_mac:
+    if match and match.base_mac and match.base_latitude is not None and match.base_longitude is not None:
         base_mac = match.base_mac
-        base_lat = match.base_latitude
-        base_lon = match.base_longitude
+        base_lat = float(match.base_latitude)
+        base_lon = float(match.base_longitude)
+        
+        print(f"[DEBUG simple] Base correction enabled: MAC={base_mac}, Lat={base_lat}, Lon={base_lon}")
         
         for tick_key in sorted(ticks.keys()):
             tick_records = ticks[tick_key]
@@ -184,20 +189,21 @@ def get_simple_history(request):
                 continue
             
             # Calculate correction: difference between base_mac position and known base coordinates
-            if base_lat is not None and base_lon is not None:
-                correction_lat = base_lat - float(base_record['latitude'])
-                correction_lon = base_lon - float(base_record['longitude'])
-                
-                # Apply correction to all records in this tick
-                for rec in tick_records:
-                    rec['latitude'] = float(rec['latitude']) + correction_lat
-                    rec['longitude'] = float(rec['longitude']) + correction_lon
-                    corrected_records.append(rec)
-            else:
-                # No base coordinates defined, keep original
-                corrected_records.extend(tick_records)
+            base_rec_lat = float(base_record['latitude'])
+            base_rec_lon = float(base_record['longitude'])
+            correction_lat = base_lat - base_rec_lat
+            correction_lon = base_lon - base_rec_lon
+            
+            # Apply correction to all records in this tick
+            for rec in tick_records:
+                original_lat = float(rec['latitude'])
+                original_lon = float(rec['longitude'])
+                rec['latitude'] = original_lat + correction_lat
+                rec['longitude'] = original_lon + correction_lon
+                corrected_records.append(rec)
     else:
         # No base correction, flatten all ticks
+        print(f"[DEBUG simple] No base correction - match: {match}, base_mac: {match.base_mac if match else None}")
         for tick_key in sorted(ticks.keys()):
             corrected_records.extend(ticks[tick_key])
     
