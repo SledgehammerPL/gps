@@ -216,10 +216,6 @@ class Command(BaseCommand):
     def save_gps_record(self, record, match_date_str):
         """Save GPS record to database"""
         try:
-            # Find or create match for this date
-            match_date = datetime.strptime(match_date_str, '%Y-%m-%d').date()
-            match, created = Match.objects.get_or_create(date=match_date)
-            
             # Construct timestamp
             timestamp = datetime(
                 year=int(match_date_str.split('-')[0]),
@@ -242,9 +238,8 @@ class Command(BaseCommand):
             
             if not existing:
                 GpsData.objects.create(
-                    match=match,
-                    mac=record['mac'],
                     timestamp=timestamp,
+                    mac=record['mac'],
                     latitude=record['latitude'],
                     longitude=record['longitude'],
                     speed_kmh=record['speed_kmh'],
