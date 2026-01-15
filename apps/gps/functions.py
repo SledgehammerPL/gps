@@ -56,3 +56,28 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     
     return R * c
 
+
+def process_history_with_correction(history_data, base_coordinates, mac_address):
+    """
+    Process history data to apply corrections based on MAC address presence.
+    
+    Args:
+        history_data: List of tuples containing (timestamp, coordinates)
+        base_coordinates: Coordinates of the base for correction
+        mac_address: The MAC address to check for
+    
+    Returns:
+        List of corrected coordinates
+    """
+    corrected_coordinates = []
+    for timestamp, coordinates in history_data:
+        if mac_address in coordinates:
+            # Calculate correction based on base coordinates
+            mac_position = coordinates[mac_address]
+            correction = (base_coordinates[0] - mac_position[0], base_coordinates[1] - mac_position[1])
+            # Apply correction to all coordinates
+            corrected = {key: (coord[0] + correction[0], coord[1] + correction[1])
+                         for key, coord in coordinates.items()}
+            corrected_coordinates.append((timestamp, corrected))
+    return corrected_coordinates
+
