@@ -98,13 +98,16 @@ def receive_gps_data(request):
     # Insert valid records into database
     inserted_count = 0
     skipped_count = 0
-    
+
+    date_str = ''
+    quality = 0
+    sats = 0 
     for time_str, row in buffer.items():
         # Quality filter: skip if no coordinates, quality 0, or less than 6 satellites
-        quality = row.get('qual', 0)
-        sats = row.get('sats', 0)
+        quality = row.get('qual', quality)
+        sats = row.get('sats', sats)
         lat = row.get('lat', False)
-        date_str = row.get('date', '')
+        date_str = row.get('date', date_str)  # if no date -take previous
         
         if lat is False or quality == 0 or sats < 6 or not date_str:
             reason = []
