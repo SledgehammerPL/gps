@@ -1,0 +1,107 @@
+body {
+    margin: 0;
+    background: #111;
+    color: white;
+    font-family: 'Segoe UI', sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+#main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+#map {
+    flex: 1;
+    background: #000;
+}
+
+#sidebar {
+    width: 350px;
+    background: #1a1a1a;
+    border-left: 1px solid #333;
+    padding: 15px;
+    overflow-y: auto;
+}
+
+.card {
+    background: #222;
+    border-radius: 10px;
+    padding: 15px;
+    margin-bottom: 12px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: 0.3s;
+}
+
+.card.active {
+    border-color: #fff;
+    background: #333;
+    box-shadow: 0 0 15px rgba(255,255,255,0.1);
+}
+
+.v-curr {
+    color: #00d2ff;
+    font-weight: bold;
+    font-size: 22px;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.label {
+    font-size: 10px;
+    color: #888;
+    text-transform: uppercase;
+}
+
+.val {
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.controls {
+    height: 120px;
+    background: #222;
+    padding: 15px 25px;
+    border-top: 1px solid #333;
+}
+
+#timeline {
+    width: 100%;
+    accent-color: #00d2ff;
+    cursor: pointer;
+}
+
+.time-display {
+    font-family: monospace;
+    font-size: 24px;
+    color: #00d2ff;
+}
+
+button {
+    background: #00d2ff;
+    color: #000;
+    border: 0;
+    padding: 10px 20px;
+    border-radius: 5px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.btn-heat {
+    background: #555;
+    color: white;
+    margin-right: 10px;
+}
+
+.btn-heat.on {
+    background: #ff4757;
+}

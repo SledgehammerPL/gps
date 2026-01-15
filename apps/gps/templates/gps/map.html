@@ -1,34 +1,12 @@
 {% load l10n %}
+{% load static %}
 <!DOCTYPE html>
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
     <title>GPS Analysis - Live Heatmap Pro</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <style>
-        body { margin: 0; background: #111; color: white; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; height: 100vh; }
-        #main { display: flex; flex: 1; overflow: hidden; }
-        #map { flex: 1; background: #000; }
-        #sidebar { width: 350px; background: #1a1a1a; border-left: 1px solid #333; padding: 15px; overflow-y: auto; }
-        
-        .card { 
-            background: #222; border-radius: 10px; padding: 15px; margin-bottom: 12px; 
-            border: 2px solid transparent; cursor: pointer; transition: 0.3s;
-        }
-        .card.active { border-color: #fff; background: #333; box-shadow: 0 0 15px rgba(255,255,255,0.1); }
-        .v-curr { color: #00d2ff; font-weight: bold; font-size: 22px; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
-        .label { font-size: 10px; color: #888; text-transform: uppercase; }
-        .val { font-weight: bold; font-size: 14px; }
-        
-        .controls { height: 120px; background: #222; padding: 15px 25px; border-top: 1px solid #333; }
-        #timeline { width: 100%; accent-color: #00d2ff; cursor: pointer; }
-        .time-display { font-family: monospace; font-size: 24px; color: #00d2ff; }
-        
-        button { background: #00d2ff; color: #000; border: 0; padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; }
-        .btn-heat { background: #555; color: white; margin-right: 10px; }
-        .btn-heat.on { background: #ff4757; }
-    </style>
+    <link rel="stylesheet" href="{% static 'gps/css/map.css' %}">
 </head>
 <body>
 
@@ -68,230 +46,15 @@
 <script src="https://leaflet.github.io/Leaflet.heat/dist/leaflet-heat.js"></script>
 
 <script>
-    const map = L.map('map', { zoomControl: true, maxZoom: 22 }).setView([50.2585, 18.9659], 21);
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 19, maxZoom: 22 }).addTo(map);
-
-    // Click on map to show coordinates
-    map.on('click', (e) => {
-        const lat = e.latlng.lat.toFixed(6);
-        const lng = e.latlng.lng.toFixed(6);
-        if (matchId) {
-            const msg = `Współrzędne:\n${lat}. ${lng}\n\nUstawić jako bazę?`;
-            if (confirm(msg)) {
-                setBaseCoords(lat, lng);
-            }
-        } else {
-            alert(`Współrzędne:\n${lat}. ${lng}`);
-        }
-    });
-
-    let data = [], ticks = [], players = {}, cur = 0, playing = false, timer = null;
-    let loading = false;
-    let selectedPlayerId = null;
-    let heatEnabled = false;
-    let heatLayer = L.heatLayer([], { radius: 15, blur: 20, maxZoom: 19 }).addTo(map);
-
-    const colors = ['#ff4757', '#2ed573', '#1e90ff', '#ffa500', '#eccc68'];
-
-    const matchId = {{ match_id|default:"null" }};
-    const matchDate = "{{ match_date|default:"" }}";
-    const baseMac = "{{ base_mac|default:"" }}";
-    const baseLatitude = {{ base_latitude|unlocalize|default:"null" }};
-    const baseLongitude = {{ base_longitude|unlocalize|default:"null" }};
-
-    // Add base station marker if coordinates exist
-    let baseMarker = null;
-    if (baseLatitude !== null && baseLongitude !== null) {
-        baseMarker = L.circleMarker([baseLatitude, baseLongitude], {
-            radius: 12,
-            color: '#ffeb3b',
-            weight: 3,
-            fillColor: '#ffeb3b',
-            fillOpacity: 0.8
-        }).bindPopup(`Stacja Bazowa<br>${baseLatitude.toFixed(6)}. ${baseLongitude.toFixed(6)}`).addTo(map);
-    }
-
-    async function setBaseCoords(lat, lng) {
-        try {
-            const formData = new FormData();
-            formData.append('match_id', matchId);
-            formData.append('latitude', lat);
-            formData.append('longitude', lng);
-            
-            const res = await fetch('{% url "gps:update_base_coords" %}', {
-                method: 'POST',
-                body: formData
-            });
-            
-            if (res.ok) {
-                const data = await res.json();
-                alert(`Baza zaktualizowana:\n${data.base_latitude}. ${data.base_longitude}`);
-            } else {
-                alert('Błąd przy aktualizacji bazy');
-            }
-        } catch (e) {
-            alert(`Błąd: ${e.message}`);
-        }
-    }
-
-    async function loadHistory() {
-        if (loading) return;
-        loading = true;
-
-        // Clear previous layers/UI
-        Object.values(players).forEach(p => { map.removeLayer(p.m); map.removeLayer(p.t); });
-        players = {};
-        document.getElementById('player-list').innerHTML = '';
-        heatLayer.setLatLngs([]);
-
-        // Django URL - używamy reverse URL zamiast history.php
-        const params = matchId ? `?match=${matchId}` : '';
-        const res = await fetch('{% url "gps:gps_history" %}' + params, { cache: 'no-store' });
-        const raw = await res.json();
-        
-        // Filtr 40km/h
-        data = raw.filter(d => parseFloat(d.speed_kmh) < 40);
-
-        const groups = {};
-        data.forEach(d => { 
-            const ts = d.timestamp.substring(0, 19); // Wyciągnij datę i czas bez timezone
-            if(!groups[ts]) groups[ts] = []; 
-            groups[ts].push(d); 
-        });
-        ticks = Object.keys(groups).sort();
-        document.getElementById('timeline').max = ticks.length - 1;
-        document.getElementById('timeline').value = 0;
-        cur = 0;
-
-        const macs = [...new Set(data.map(d => d.mac))];
-        macs.forEach((mac, idx) => {
-            const c = colors[idx % colors.length];
-            players[mac] = {
-                m: L.circleMarker([0,0], {radius: 7, color: '#fff', weight: 2, fillColor: c, fillOpacity: 1}).addTo(map),
-                t: L.polyline([], {color: c, weight: 3, opacity: 0.3}).addTo(map)
-            };
-        });
-        
-        // Set map center to first data point
-        if (data.length > 0) {
-            map.setView([data[0].latitude, data[0].longitude], 21);
-        }
-        
-        show(0);
-        loading = false;
-    }
-
-    function toggleHeat() {
-        heatEnabled = !heatEnabled;
-        const btn = document.getElementById('heatBtn');
-        btn.innerText = heatEnabled ? "HEATMAPA: ON" : "HEATMAPA: OFF";
-        btn.classList.toggle('on', heatEnabled);
-        if(!heatEnabled) heatLayer.setLatLngs([]);
-        show(cur);
-    }
-
-    function selectPlayer(id) {
-        selectedPlayerId = id;
-        document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
-        if(id !== null) document.getElementById(`p-${id}`).classList.add('active');
-        show(cur);
-    }
-
-    function show(idx) {
-        cur = idx;
-        const ts = ticks[idx];
-        if(!ts) return;
-        document.getElementById('time-val').innerText = ts.substring(11); // HH:MM:SS
-
-        const frame = data.filter(d => d.timestamp.substring(0, 19) === ts);
-        let heatPoints = [];
-
-        // Przetwarzanie zawodników po MAC
-        Object.keys(players).forEach(mac => {
-            const p = players[mac];
-            const pData = frame.find(d => d.mac === mac);
-            const hist = data.filter(x => x.mac === mac && x.timestamp.substring(0, 19) <= ts);
-            
-            // Oblicz statystyki
-            let dSum = 0, vMax = 0;
-            hist.forEach(h => {
-                dSum += parseFloat(h.step_dist || 0);
-                if(parseFloat(h.speed_kmh) > vMax) vMax = parseFloat(h.speed_kmh);
-            });
-
-            if(pData) {
-                p.m.setLatLng([pData.latitude, pData.longitude]);
-                p.t.setLatLngs(hist.map(h => [h.latitude, h.longitude]));
-                updateUI(mac, parseFloat(pData.speed_kmh), vMax, dSum);
-                
-                // Ukrywanie/Pokazywanie markerów w zależności od wyboru
-                if(selectedPlayerId === null || selectedPlayerId === mac) {
-                    p.m.setStyle({opacity: 1, fillOpacity: 1});
-                    p.t.setStyle({opacity: 0.3});
-                } else {
-                    p.m.setStyle({opacity: 0, fillOpacity: 0});
-                    p.t.setStyle({opacity: 0});
-                }
-            }
-
-            // Dodawanie do heatmapy (tylko wybrany lub wszyscy)
-            if(heatEnabled) {
-                if(selectedPlayerId === null || selectedPlayerId === mac) {
-                    hist.forEach(h => heatPoints.push([h.latitude, h.longitude, 0.5]));
-                }
-            }
-        });
-
-        if(heatEnabled) heatLayer.setLatLngs(heatPoints);
-    }
-
-    function updateUI(mac, v, vm, d) {
-        let el = document.getElementById(`p-${mac}`);
-        if(!el) {
-            el = document.createElement('div'); el.id = `p-${mac}`; el.className = 'card';
-            el.onclick = () => selectPlayer(mac);
-            const idx = Object.keys(players).indexOf(mac);
-            el.style.borderLeftColor = colors[idx % colors.length];
-            document.getElementById('player-list').appendChild(el);
-        }
-        el.innerHTML = `
-            <div style="display:flex; justify-content:space-between"><strong>${mac}</strong> <span class="v-curr">${v.toFixed(1)} <small>km/h</small></span></div>
-            <div class="grid">
-                <div><div class="label">Dystans</div><div class="val" style="color:#2ed573">${d.toFixed(2)} m</div></div>
-                <div><div class="label">V-Max</div><div class="val" style="color:#ff4757">${vm.toFixed(1)} km/h</div></div>
-            </div>`;
-    }
-
-    async function togglePlay() {
-        if (playing) {
-            playing = false;
-            document.getElementById('btnPlay').innerText = 'ODTWÓRZ';
-            clearInterval(timer);
-            return;
-        }
-
-        // Load history only if data is empty (first time)
-        if (data.length === 0) {
-            await loadHistory();
-        }
-
-        playing = true;
-        document.getElementById('btnPlay').innerText = 'PAUZA';
-        timer = setInterval(() => {
-            if(cur < ticks.length - 1) {
-                show(cur + 1);
-                document.getElementById('timeline').value = cur;
-            } else {
-                togglePlay();
-            }
-        }, 100 / document.getElementById('speed').value);
-    }
-
-    document.getElementById('timeline').oninput = (e) => { 
-        if(playing) togglePlay(); 
-        show(parseInt(e.target.value)); 
-    };
-    loadHistory();
+    // Pass Django variables to JavaScript
+    window.matchId = {{ match_id|default:"null" }};
+    window.matchDate = "{{ match_date|default:"" }}";
+    window.baseMac = "{{ base_mac|default:"" }}";
+    window.baseLatitude = {{ base_latitude|unlocalize|default:"null" }};
+    window.baseLongitude = {{ base_longitude|unlocalize|default:"null" }};
+    window.gpsHistoryUrl = '{% url "gps:gps_history" %}';
+    window.updateBaseCoordsUrl = '{% url "gps:update_base_coords" %}';
 </script>
+<script src="{% static 'gps/js/map.js' %}"></script>
 </body>
 </html>
