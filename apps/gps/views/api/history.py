@@ -4,11 +4,11 @@ Converted from history.php
 
 Provides endpoints for retrieving GPS tracking history with position hold logic.
 """
+from collections import defaultdict
 from datetime import timedelta
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_GET
-from ...functions import haversine_distance
 from ...models import GpsData, Match
 
 
@@ -47,35 +47,54 @@ def get_gps_history(request):
             'timestamp', 'mac', 'latitude', 'longitude', 'speed_kmh'
         ))
 
-        # Base-station correction: keep base_mac fixed, apply its drift delta to all points at same timestamp
+        # Group records by timestamp (tick) with 0.1s precision
+        ticks = defaultdict(list)
+        for rec in gps_records:
+            # Round to 0.1s precision
+            ts = rec['timestamp']
+            tick_key = ts.replace(microsecond=(ts.microsecond // 100000) * 100000)
+            ticks[tick_key].append(rec)
+        
+        # Process ticks in chronological order with base correction
+        corrected_records = []
         if match and match.base_mac:
             base_mac = match.base_mac
-            base_points = [r for r in gps_records if r['mac'] == base_mac]
-            if base_points:
-                ref_lat = sum(float(p['latitude']) for p in base_points) / len(base_points)
-                ref_lon = sum(float(p['longitude']) for p in base_points) / len(base_points)
-                # Build per-timestamp delta for base
-                base_deltas = {}
-                for p in base_points:
-                    ts_key = p['timestamp']  # datetime with microseconds
-                    base_deltas[ts_key] = (
-                        float(p['latitude']) - ref_lat,
-                        float(p['longitude']) - ref_lon,
-                    )
-                # Apply correction using exact timestamps (microsecond precision)
-                for rec in gps_records:
-                    ts_key = rec['timestamp']
-                    delta = base_deltas.get(ts_key)
-                    if delta:
-                        dlat, dlon = delta
-                        rec['latitude'] = float(rec['latitude']) - dlat
-                        rec['longitude'] = float(rec['longitude']) - dlon
+            base_lat = match.base_latitude
+            base_lon = match.base_longitude
+            
+            for tick_key in sorted(ticks.keys()):
+                tick_records = ticks[tick_key]
+                
+                # Find base_mac in this tick
+                base_record = None
+                for rec in tick_records:
+                    if rec['mac'] == base_mac:
+                        base_record = rec
+                        break
+                
+                # If no base_mac in this tick, skip it
+                if not base_record:
+                    continue
+                
+                # Calculate correction: difference between base_mac position and known base coordinates
+                if base_lat is not None and base_lon is not None:
+                    correction_lat = base_lat - float(base_record['latitude'])
+                    correction_lon = base_lon - float(base_record['longitude'])
+                    
+                    # Apply correction to all records in this tick
+                    for rec in tick_records:
+                        rec['latitude'] = float(rec['latitude']) + correction_lat
+                        rec['longitude'] = float(rec['longitude']) + correction_lon
+                        corrected_records.append(rec)
+                else:
+                    # No base coordinates defined, keep original
+                    corrected_records.extend(tick_records)
+        else:
+            # No base correction, flatten all ticks
+            for tick_key in sorted(ticks.keys()):
+                corrected_records.extend(ticks[tick_key])
         
-        # Filter: only even tenths of second (0.0, 0.2, 0.4, 0.6, 0.8) - skok co 0.2s
-        gps_records = [
-            rec for rec in gps_records 
-            if (rec['timestamp'].microsecond // 100000) % 1 == 0
-        ]
+        gps_records = corrected_records
         
         # Convert to list and format response
         results = []
@@ -135,27 +154,54 @@ def get_simple_history(request):
         'timestamp', 'mac', 'latitude', 'longitude', 'speed_kmh'
     ))
 
-    # Base-station correction when match and base_mac present
+    # Group records by timestamp (tick) with 0.1s precision
+    ticks = defaultdict(list)
+    for rec in gps_data:
+        # Round to 0.1s precision
+        ts = rec['timestamp']
+        tick_key = ts.replace(microsecond=(ts.microsecond // 100000) * 100000)
+        ticks[tick_key].append(rec)
+    
+    # Process ticks in chronological order with base correction
+    corrected_records = []
     if match and match.base_mac:
         base_mac = match.base_mac
-        base_points = [r for r in gps_data if r['mac'] == base_mac]
-        if base_points:
-            ref_lat = sum(float(p['latitude']) for p in base_points) / len(base_points)
-            ref_lon = sum(float(p['longitude']) for p in base_points) / len(base_points)
-            base_deltas = {}
-            for p in base_points:
-                ts_key = p['timestamp']  # datetime with microseconds
-                base_deltas[ts_key] = (
-                    float(p['latitude']) - ref_lat,
-                    float(p['longitude']) - ref_lon,
-                )
-            for rec in gps_data:
-                ts_key = rec['timestamp']
-                delta = base_deltas.get(ts_key)
-                if delta:
-                    dlat, dlon = delta
-                    rec['latitude'] = float(rec['latitude']) - dlat
-                    rec['longitude'] = float(rec['longitude']) - dlon
+        base_lat = match.base_latitude
+        base_lon = match.base_longitude
+        
+        for tick_key in sorted(ticks.keys()):
+            tick_records = ticks[tick_key]
+            
+            # Find base_mac in this tick
+            base_record = None
+            for rec in tick_records:
+                if rec['mac'] == base_mac:
+                    base_record = rec
+                    break
+            
+            # If no base_mac in this tick, skip it
+            if not base_record:
+                continue
+            
+            # Calculate correction: difference between base_mac position and known base coordinates
+            if base_lat is not None and base_lon is not None:
+                correction_lat = base_lat - float(base_record['latitude'])
+                correction_lon = base_lon - float(base_record['longitude'])
+                
+                # Apply correction to all records in this tick
+                for rec in tick_records:
+                    rec['latitude'] = float(rec['latitude']) + correction_lat
+                    rec['longitude'] = float(rec['longitude']) + correction_lon
+                    corrected_records.append(rec)
+            else:
+                # No base coordinates defined, keep original
+                corrected_records.extend(tick_records)
+    else:
+        # No base correction, flatten all ticks
+        for tick_key in sorted(ticks.keys()):
+            corrected_records.extend(ticks[tick_key])
+    
+    gps_data = corrected_records
     
     # Convert to list and format
     results = []
