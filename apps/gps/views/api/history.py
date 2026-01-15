@@ -4,6 +4,7 @@ Converted from history.php
 
 Provides endpoints for retrieving GPS tracking history with position hold logic.
 """
+import logging
 from collections import defaultdict
 from datetime import timedelta
 from django.http import JsonResponse
@@ -11,12 +12,16 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET
 from ...models import GpsData, Match
 
+logger = logging.getLogger(__name__)
+
 
 @require_GET
 def get_gps_history(request):
     """
     Get GPS history with movement analysis using Django ORM.
     """
+    logger.info(f"[DEBUG] get_gps_history called with params: {request.GET.dict()}")
+    
     try:
         threshold = float(request.GET.get('threshold', 0.8))
         hours = int(request.GET.get('hours', 24))
@@ -29,6 +34,7 @@ def get_gps_history(request):
     if match_id:
         try:
             match = Match.objects.get(id=match_id)
+            logger.info(f"[DEBUG] Match found: ID={match.id}, base_mac={match.base_mac}, base_lat={match.base_latitude}, base_lon={match.base_longitude}")
         except Match.DoesNotExist:
             return JsonResponse({'error': 'Match not found'}, status=404)
     
@@ -62,7 +68,7 @@ def get_gps_history(request):
             base_lat = float(match.base_latitude)
             base_lon = float(match.base_longitude)
             
-            print(f"[DEBUG] Base correction enabled: MAC={base_mac}, Lat={base_lat}, Lon={base_lon}")
+            logger.info(f"[DEBUG] Base correction enabled: MAC={base_mac}, Lat={base_lat}, Lon={base_lon}")
             
             for tick_key in sorted(ticks.keys()):
                 tick_records = ticks[tick_key]
@@ -93,11 +99,13 @@ def get_gps_history(request):
                     corrected_records.append(rec)
         else:
             # No base correction, flatten all ticks
-            print(f"[DEBUG] No base correction - match: {match}, base_mac: {match.base_mac if match else None}")
+            logger.info(f"[DEBUG] No base correction - match: {match}, base_mac: {match.base_mac if match else None}")
             for tick_key in sorted(ticks.keys()):
                 corrected_records.extend(ticks[tick_key])
         
         gps_records = corrected_records
+        
+        logger.info(f"[DEBUG] Returning {len(gps_records)} records after correction")
         
         # Convert to list and format response
         results = []
@@ -112,12 +120,16 @@ def get_gps_history(request):
                 'step_dist': 0.0
             })
         
+        if results:
+            logger.info(f"[DEBUG] First result: {results[0]}")
+            logger.info(f"[DEBUG] Total results: {len(results)}")
+        
         return JsonResponse(results, safe=False)
         
     except Exception as e:
         import traceback
-        print(f"[ERROR] get_gps_history: {e}")
-        print(traceback.format_exc())
+        logger.error(f"[ERROR] get_gps_history: {e}")
+        logger.error(traceback.format_exc())
         return JsonResponse({
             'error': str(e),
             'type': type(e).__name__
@@ -172,7 +184,7 @@ def get_simple_history(request):
         base_lat = float(match.base_latitude)
         base_lon = float(match.base_longitude)
         
-        print(f"[DEBUG simple] Base correction enabled: MAC={base_mac}, Lat={base_lat}, Lon={base_lon}")
+        logger.info(f"[DEBUG simple] Base correction enabled: MAC={base_mac}, Lat={base_lat}, Lon={base_lon}")
         
         for tick_key in sorted(ticks.keys()):
             tick_records = ticks[tick_key]
@@ -203,7 +215,7 @@ def get_simple_history(request):
                 corrected_records.append(rec)
     else:
         # No base correction, flatten all ticks
-        print(f"[DEBUG simple] No base correction - match: {match}, base_mac: {match.base_mac if match else None}")
+        logger.info(f"[DEBUG simple] No base correction - match: {match}, base_mac: {match.base_mac if match else None}")
         for tick_key in sorted(ticks.keys()):
             corrected_records.extend(ticks[tick_key])
     
