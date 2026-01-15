@@ -139,6 +139,29 @@ def get_gps_history(request):
             gps_records = corrected_records
             logger.info("[DEBUG] Applied corrections to all records")
         
+        # Calculate step distances for each MAC
+        gps_records_by_mac = defaultdict(list)
+        for rec in gps_records:
+            gps_records_by_mac[rec['mac']].append(rec)
+        
+        for mac, mac_records in gps_records_by_mac.items():
+            for i in range(1, len(mac_records)):
+                curr = mac_records[i]
+                prev = mac_records[i - 1]
+                
+                from ...functions import haversine_distance
+                distance = haversine_distance(
+                    float(prev['latitude']), float(prev['longitude']),
+                    float(curr['latitude']), float(curr['longitude'])
+                )
+                curr['step_dist'] = distance
+        
+        # Flatten back to single list
+        gps_records = []
+        for mac_records in gps_records_by_mac.values():
+            gps_records.extend(mac_records)
+        gps_records.sort(key=lambda r: r['timestamp'])
+        
         # Filter by threshold
         gps_records = [
             rec for rec in gps_records
@@ -292,6 +315,29 @@ def get_simple_history(request):
         
         gps_data = corrected_records
         logger.info("[DEBUG simple] Applied corrections to all records")
+    
+    # Calculate step distances for each MAC
+    gps_data_by_mac = defaultdict(list)
+    for rec in gps_data:
+        gps_data_by_mac[rec['mac']].append(rec)
+    
+    for mac, mac_records in gps_data_by_mac.items():
+        for i in range(1, len(mac_records)):
+            curr = mac_records[i]
+            prev = mac_records[i - 1]
+            
+            from ...functions import haversine_distance
+            distance = haversine_distance(
+                float(prev['latitude']), float(prev['longitude']),
+                float(curr['latitude']), float(curr['longitude'])
+            )
+            curr['step_dist'] = distance
+    
+    # Flatten back to single list
+    gps_data = []
+    for mac_records in gps_data_by_mac.values():
+        gps_data.extend(mac_records)
+    gps_data.sort(key=lambda r: r['timestamp'])
     
     # Filter by threshold
     gps_data = [
