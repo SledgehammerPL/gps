@@ -178,7 +178,7 @@ def get_gps_history(request):
                 'latitude': round(float(record['latitude']), 6),
                 'longitude': round(float(record['longitude']), 6),
                 'speed_kmh': round(speed, 2) if speed >= threshold else 0.0,
-                'step_dist': 0.0
+                'step_dist': round(float(record.get('step_dist', 0.0)), 2)
             })
         
         if results:
@@ -355,7 +355,7 @@ def get_simple_history(request):
             'latitude': float(item['latitude']),
             'longitude': float(item['longitude']),
             'speed_kmh': round(speed, 2) if speed >= threshold else 0.0,
-            'step_dist': 0.0
+            'step_dist': round(float(item.get('step_dist', 0.0)), 2)
         })
     
     return JsonResponse(results, safe=False)
