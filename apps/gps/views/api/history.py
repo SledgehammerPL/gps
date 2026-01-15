@@ -34,7 +34,7 @@ def get_gps_history(request):
     if match_id:
         try:
             match = Match.objects.get(id=match_id)
-            logger.info(f"[DEBUG] Match found: ID={match.id}, base_mac={match.base_mac}, base_lat={match.base_latitude}, base_lon={match.base_longitude}")
+            logger.info(f"[DEBUG] Match found: {match.id}, base_mac={match.base_mac}")
         except Match.DoesNotExist:
             return JsonResponse({'error': 'Match not found'}, status=404)
     
@@ -53,59 +53,97 @@ def get_gps_history(request):
             'timestamp', 'mac', 'latitude', 'longitude', 'speed_kmh'
         ))
 
-        # Group records by timestamp (tick) with 0.1s precision
-        ticks = defaultdict(list)
-        for rec in gps_records:
-            # Round to 0.1s precision
-            ts = rec['timestamp']
-            tick_key = ts.replace(microsecond=(ts.microsecond // 100000) * 100000)
-            ticks[tick_key].append(rec)
-        
-        # Process ticks in chronological order with base correction
-        corrected_records = []
+        # Build correction map if we have base_mac and base coordinates
+        corrections_by_tick = {}
         if match and match.base_mac and match.base_latitude is not None and match.base_longitude is not None:
             base_mac = match.base_mac
             base_lat = float(match.base_latitude)
             base_lon = float(match.base_longitude)
             
-            logger.info(f"[DEBUG] Base correction enabled: MAC={base_mac}, Lat={base_lat}, Lon={base_lon}")
+            logger.info(f"[DEBUG] Building correction map: base_mac={base_mac}")
             
-            for tick_key in sorted(ticks.keys()):
-                tick_records = ticks[tick_key]
+            # Step 1: Get all base_mac points and group by tick (0.1s precision)
+            base_points = [r for r in gps_records if r['mac'] == base_mac]
+            logger.info(f"[DEBUG] Found {len(base_points)} base_mac points")
+            
+            base_ticks = defaultdict(list)
+            for rec in base_points:
+                ts = rec['timestamp']
+                tick_key = ts.replace(microsecond=(ts.microsecond // 100000) * 100000)
+                base_ticks[tick_key].append(rec)
+            
+            # Step 2: Calculate correction for each tick with base_mac data
+            for tick_key in sorted(base_ticks.keys()):
+                tick_recs = base_ticks[tick_key]
+                avg_lat = sum(float(r['latitude']) for r in tick_recs) / len(tick_recs)
+                avg_lon = sum(float(r['longitude']) for r in tick_recs) / len(tick_recs)
                 
-                # Find base_mac in this tick
-                base_record = None
-                for rec in tick_records:
-                    if rec['mac'] == base_mac:
-                        base_record = rec
-                        break
+                correction_lat = base_lat - avg_lat
+                correction_lon = base_lon - avg_lon
                 
-                # If no base_mac in this tick, skip it
-                if not base_record:
-                    continue
+                corrections_by_tick[tick_key] = {
+                    'lat': correction_lat,
+                    'lon': correction_lon
+                }
+            
+            logger.info(f"[DEBUG] Calculated corrections for {len(corrections_by_tick)} ticks")
+            
+            # Step 3: Interpolate missing corrections
+            if corrections_by_tick:
+                sorted_ticks = sorted(corrections_by_tick.keys())
                 
-                # Calculate correction: difference between base_mac position and known base coordinates
-                base_rec_lat = float(base_record['latitude'])
-                base_rec_lon = float(base_record['longitude'])
-                correction_lat = base_lat - base_rec_lat
-                correction_lon = base_lon - base_rec_lon
+                for i in range(len(sorted_ticks) - 1):
+                    curr_tick = sorted_ticks[i]
+                    next_tick = sorted_ticks[i + 1]
+                    
+                    # Calculate how many ticks are between current and next
+                    tick_diff = (next_tick - curr_tick).total_seconds()
+                    num_gaps = int(tick_diff / 0.1) - 1
+                    
+                    if num_gaps > 0:
+                        curr_corr = corrections_by_tick[curr_tick]
+                        next_corr = corrections_by_tick[next_tick]
+                        
+                        if num_gaps == 1:
+                            # Single gap: average
+                            mid_tick = curr_tick + (next_tick - curr_tick) / 2
+                            corrections_by_tick[mid_tick] = {
+                                'lat': (curr_corr['lat'] + next_corr['lat']) / 2,
+                                'lon': (curr_corr['lon'] + next_corr['lon']) / 2
+                            }
+                        else:
+                            # Multiple gaps: linear interpolation
+                            for gap_idx in range(1, num_gaps + 1):
+                                fraction = gap_idx / (num_gaps + 1)
+                                gap_tick = curr_tick + (next_tick - curr_tick) * fraction
+                                corrections_by_tick[gap_tick] = {
+                                    'lat': curr_corr['lat'] + (next_corr['lat'] - curr_corr['lat']) * fraction,
+                                    'lon': curr_corr['lon'] + (next_corr['lon'] - curr_corr['lon']) * fraction
+                                }
                 
-                # Apply correction to all records in this tick
-                for rec in tick_records:
-                    original_lat = float(rec['latitude'])
-                    original_lon = float(rec['longitude'])
-                    rec['latitude'] = original_lat + correction_lat
-                    rec['longitude'] = original_lon + correction_lon
-                    corrected_records.append(rec)
-        else:
-            # No base correction, flatten all ticks
-            logger.info(f"[DEBUG] No base correction - match: {match}, base_mac: {match.base_mac if match else None}")
-            for tick_key in sorted(ticks.keys()):
-                corrected_records.extend(ticks[tick_key])
+                logger.info(f"[DEBUG] After interpolation: {len(corrections_by_tick)} corrections available")
+            
+            # Step 4: Apply corrections to all records
+            corrected_records = []
+            for rec in gps_records:
+                ts = rec['timestamp']
+                tick_key = ts.replace(microsecond=(ts.microsecond // 100000) * 100000)
+                
+                if tick_key in corrections_by_tick:
+                    correction = corrections_by_tick[tick_key]
+                    rec['latitude'] = float(rec['latitude']) + correction['lat']
+                    rec['longitude'] = float(rec['longitude']) + correction['lon']
+                
+                corrected_records.append(rec)
+            
+            gps_records = corrected_records
+            logger.info("[DEBUG] Applied corrections to all records")
         
-        gps_records = corrected_records
-        
-        logger.info(f"[DEBUG] Returning {len(gps_records)} records after correction")
+        # Filter by threshold
+        gps_records = [
+            rec for rec in gps_records
+            if (rec['timestamp'].microsecond // 100000) % 1 == 0
+        ]
         
         # Convert to list and format response
         results = []
@@ -169,57 +207,97 @@ def get_simple_history(request):
         'timestamp', 'mac', 'latitude', 'longitude', 'speed_kmh'
     ))
 
-    # Group records by timestamp (tick) with 0.1s precision
-    ticks = defaultdict(list)
-    for rec in gps_data:
-        # Round to 0.1s precision
-        ts = rec['timestamp']
-        tick_key = ts.replace(microsecond=(ts.microsecond // 100000) * 100000)
-        ticks[tick_key].append(rec)
-    
-    # Process ticks in chronological order with base correction
-    corrected_records = []
+    # Build correction map if we have base_mac and base coordinates
+    corrections_by_tick = {}
     if match and match.base_mac and match.base_latitude is not None and match.base_longitude is not None:
         base_mac = match.base_mac
         base_lat = float(match.base_latitude)
         base_lon = float(match.base_longitude)
         
-        logger.info(f"[DEBUG simple] Base correction enabled: MAC={base_mac}, Lat={base_lat}, Lon={base_lon}")
+        logger.info(f"[DEBUG simple] Building correction map: base_mac={base_mac}")
         
-        for tick_key in sorted(ticks.keys()):
-            tick_records = ticks[tick_key]
+        # Step 1: Get all base_mac points and group by tick (0.1s precision)
+        base_points = [r for r in gps_data if r['mac'] == base_mac]
+        logger.info(f"[DEBUG simple] Found {len(base_points)} base_mac points")
+        
+        base_ticks = defaultdict(list)
+        for rec in base_points:
+            ts = rec['timestamp']
+            tick_key = ts.replace(microsecond=(ts.microsecond // 100000) * 100000)
+            base_ticks[tick_key].append(rec)
+        
+        # Step 2: Calculate correction for each tick with base_mac data
+        for tick_key in sorted(base_ticks.keys()):
+            tick_recs = base_ticks[tick_key]
+            avg_lat = sum(float(r['latitude']) for r in tick_recs) / len(tick_recs)
+            avg_lon = sum(float(r['longitude']) for r in tick_recs) / len(tick_recs)
             
-            # Find base_mac in this tick
-            base_record = None
-            for rec in tick_records:
-                if rec['mac'] == base_mac:
-                    base_record = rec
-                    break
+            correction_lat = base_lat - avg_lat
+            correction_lon = base_lon - avg_lon
             
-            # If no base_mac in this tick, skip it
-            if not base_record:
-                continue
+            corrections_by_tick[tick_key] = {
+                'lat': correction_lat,
+                'lon': correction_lon
+            }
+        
+        logger.info(f"[DEBUG simple] Calculated corrections for {len(corrections_by_tick)} ticks")
+        
+        # Step 3: Interpolate missing corrections
+        if corrections_by_tick:
+            sorted_ticks = sorted(corrections_by_tick.keys())
             
-            # Calculate correction: difference between base_mac position and known base coordinates
-            base_rec_lat = float(base_record['latitude'])
-            base_rec_lon = float(base_record['longitude'])
-            correction_lat = base_lat - base_rec_lat
-            correction_lon = base_lon - base_rec_lon
+            for i in range(len(sorted_ticks) - 1):
+                curr_tick = sorted_ticks[i]
+                next_tick = sorted_ticks[i + 1]
+                
+                # Calculate how many ticks are between current and next
+                tick_diff = (next_tick - curr_tick).total_seconds()
+                num_gaps = int(tick_diff / 0.1) - 1
+                
+                if num_gaps > 0:
+                    curr_corr = corrections_by_tick[curr_tick]
+                    next_corr = corrections_by_tick[next_tick]
+                    
+                    if num_gaps == 1:
+                        # Single gap: average
+                        mid_tick = curr_tick + (next_tick - curr_tick) / 2
+                        corrections_by_tick[mid_tick] = {
+                            'lat': (curr_corr['lat'] + next_corr['lat']) / 2,
+                            'lon': (curr_corr['lon'] + next_corr['lon']) / 2
+                        }
+                    else:
+                        # Multiple gaps: linear interpolation
+                        for gap_idx in range(1, num_gaps + 1):
+                            fraction = gap_idx / (num_gaps + 1)
+                            gap_tick = curr_tick + (next_tick - curr_tick) * fraction
+                            corrections_by_tick[gap_tick] = {
+                                'lat': curr_corr['lat'] + (next_corr['lat'] - curr_corr['lat']) * fraction,
+                                'lon': curr_corr['lon'] + (next_corr['lon'] - curr_corr['lon']) * fraction
+                            }
             
-            # Apply correction to all records in this tick
-            for rec in tick_records:
-                original_lat = float(rec['latitude'])
-                original_lon = float(rec['longitude'])
-                rec['latitude'] = original_lat + correction_lat
-                rec['longitude'] = original_lon + correction_lon
-                corrected_records.append(rec)
-    else:
-        # No base correction, flatten all ticks
-        logger.info(f"[DEBUG simple] No base correction - match: {match}, base_mac: {match.base_mac if match else None}")
-        for tick_key in sorted(ticks.keys()):
-            corrected_records.extend(ticks[tick_key])
+            logger.info(f"[DEBUG simple] After interpolation: {len(corrections_by_tick)} corrections available")
+        
+        # Step 4: Apply corrections to all records
+        corrected_records = []
+        for rec in gps_data:
+            ts = rec['timestamp']
+            tick_key = ts.replace(microsecond=(ts.microsecond // 100000) * 100000)
+            
+            if tick_key in corrections_by_tick:
+                correction = corrections_by_tick[tick_key]
+                rec['latitude'] = float(rec['latitude']) + correction['lat']
+                rec['longitude'] = float(rec['longitude']) + correction['lon']
+            
+            corrected_records.append(rec)
+        
+        gps_data = corrected_records
+        logger.info("[DEBUG simple] Applied corrections to all records")
     
-    gps_data = corrected_records
+    # Filter by threshold
+    gps_data = [
+        rec for rec in gps_data
+        if (rec['timestamp'].microsecond // 100000) % 1 == 0
+    ]
     
     # Convert to list and format
     results = []
